@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Support Assistant (Internal)",
+  "version": "0.13.0",
+  "description": "Tóm tắt, gợi ý priority/tag và theo dõi issue cho team support. Chỉ đọc nội dung tab khi agent bấm nút Tóm tắt.",
+  "permissions": ["storage", "unlimitedStorage", "activeTab", "scripting", "sidePanel"],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "action": {
+    "default_title": "Mở Support Assistant"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icons/icon128.png",
+    "48": "icons/icon128.png",
+    "128": "icons/icon128.png"
+  }
+}
