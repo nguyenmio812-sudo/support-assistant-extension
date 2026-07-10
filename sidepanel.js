@@ -359,6 +359,21 @@ function issueAgeDays(issue) {
   return Math.floor((Date.now() - new Date(issue.jiraCreatedAt).getTime()) / (24 * 60 * 60 * 1000));
 }
 
+// Gọi GET_JIRA_STATUS cho 1 issue và cập nhật status/statusName/jiraSyncError/
+// jiraCreatedAt ngay trên object issue truyền vào (không saveIssues — gọi nơi
+// dùng tự lưu). Tách riêng để dùng chung giữa nút resync-issue và edit-jira.
+async function syncIssueJiraStatus(target) {
+  const statusRes = await chrome.runtime.sendMessage({ type: "GET_JIRA_STATUS", payload: { jiraLink: target.jiraLink } });
+  if (statusRes?.data?.status) {
+    target.status = statusRes.data.status;
+    target.statusName = statusRes.data.statusName || null;
+    target.jiraSyncError = null;
+  } else if (statusRes?.error) {
+    target.jiraSyncError = statusRes.error;
+  }
+  if (statusRes?.data?.created) target.jiraCreatedAt = statusRes.data.created;
+}
+
 function buildIssueCard(issue) {
   const card = document.createElement("div");
   card.className = "issue-card" + (issue.priority ? " issue-card-priority" : "");
@@ -381,8 +396,12 @@ function buildIssueCard(issue) {
       </span>
     </div>
     <div class="meta">
-      ${issue.sourceLink ? `<a href="${issue.sourceLink}" target="_blank">Nguồn ↗</a>` : ""}
-      ${issue.jiraLink ? ` · <a href="${issue.jiraLink}" target="_blank">Jira ↗</a>` : ` · <button class="secondary link-jira" data-id="${issue.id}">+ Link Jira</button>`}
+      ${issue.sourceLink
+        ? `<a href="${issue.sourceLink}" target="_blank">Nguồn ↗</a> <button class="secondary edit-source" data-id="${issue.id}" style="padding:1px 6px; font-size:11px;">✏️</button>`
+        : `<button class="secondary edit-source" data-id="${issue.id}" style="padding:1px 6px; font-size:11px;">+ Thêm link Crisp</button>`}
+      ${issue.jiraLink
+        ? ` · <a href="${issue.jiraLink}" target="_blank">Jira ↗</a> <button class="secondary edit-jira" data-id="${issue.id}" style="padding:1px 6px; font-size:11px;">✏️</button>`
+        : ` · <button class="secondary edit-jira" data-id="${issue.id}" style="padding:1px 6px; font-size:11px;">+ Link Jira</button>`}
       ${issue.slackLink ? ` · <a href="${issue.slackLink}" target="_blank">Slack ↗</a>` : ""}
       · <button class="secondary edit-title" data-id="${issue.id}" style="padding:1px 6px; font-size:11px;">✏️ Sửa tiêu đề</button>
     </div>
@@ -459,15 +478,7 @@ async function renderIssuesList() {
       }
 
       // Đồng bộ status
-      const statusRes = await chrome.runtime.sendMessage({ type: "GET_JIRA_STATUS", payload: { jiraLink: target.jiraLink } });
-      if (statusRes?.data?.status) {
-        target.status = statusRes.data.status;
-        target.statusName = statusRes.data.statusName || null;
-        target.jiraSyncError = null;
-      } else if (statusRes?.error) {
-        target.jiraSyncError = statusRes.error;
-      }
-      if (statusRes?.data?.created) target.jiraCreatedAt = statusRes.data.created;
+      await syncIssueJiraStatus(target);
 
       // Nếu tiêu đề vẫn đang là placeholder, thử lấy lại luôn
       if (target.title === "(chưa có tiêu đề — sửa thủ công)") {
@@ -527,13 +538,48 @@ async function renderIssuesList() {
     })
   );
 
-  list.querySelectorAll(".link-jira").forEach((b) =>
+  // Sửa/thêm link Crisp — dùng chung 1 nút (chỉ khác label) cho cả 2 trường
+  // hợp thêm lần đầu và sửa lại link đã có.
+  list.querySelectorAll(".edit-source").forEach((b) =>
     b.addEventListener("click", async (e) => {
-      const url = prompt("Dán link Jira issue:");
-      if (!url) return;
+      const id = e.currentTarget.dataset.id;
       const issues = await getIssues();
-      const target = issues.find((i) => i.id === e.target.dataset.id);
-      if (target) target.jiraLink = url;
+      const target = issues.find((i) => i.id === id);
+      if (!target) return;
+      const newLink = prompt("Sửa link Crisp:", target.sourceLink || "");
+      if (newLink === null) return; // huỷ
+      const trimmed = newLink.trim();
+      if (trimmed && !trimmed.startsWith("http")) {
+        alert("Link phải bắt đầu bằng http:// hoặc https://");
+        return;
+      }
+      target.sourceLink = trimmed;
+      await saveIssues(issues);
+      renderIssuesList();
+    })
+  );
+
+  // Sửa/thêm link Jira — dùng chung 1 nút, thay cho "link-jira" cũ (chỉ thêm
+  // được lúc rỗng). Nếu đổi sang 1 link Jira mới khác link cũ, đồng bộ luôn
+  // status/statusName thay vì đợi lần resync tiếp theo.
+  list.querySelectorAll(".edit-jira").forEach((b) =>
+    b.addEventListener("click", async (e) => {
+      const id = e.currentTarget.dataset.id;
+      const issues = await getIssues();
+      const target = issues.find((i) => i.id === id);
+      if (!target) return;
+      const newLink = prompt("Sửa link Jira:", target.jiraLink || "");
+      if (newLink === null) return; // huỷ
+      const trimmed = newLink.trim();
+      if (trimmed && !trimmed.startsWith("http")) {
+        alert("Link phải bắt đầu bằng http:// hoặc https://");
+        return;
+      }
+      const oldLink = target.jiraLink;
+      target.jiraLink = trimmed;
+      if (trimmed && trimmed !== oldLink) {
+        await syncIssueJiraStatus(target);
+      }
       await saveIssues(issues);
       renderIssuesList();
     })
