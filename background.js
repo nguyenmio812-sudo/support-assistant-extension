@@ -192,7 +192,8 @@ async function searchRelatedIssues(payload, cfg) {
     const jql = `project = "${cfg.jiraProjectKey}" AND text ~ "${primaryTag}" ORDER BY updated DESC`;
 
     const auth = btoa(`${cfg.jiraEmail}:${cfg.jiraApiToken}`);
-    const res = await fetch(`${cfg.jiraBaseUrl}/rest/api/3/search?jql=${encodeURIComponent(jql)}&fields=summary,status&maxResults=5`, {
+    // Jira đã gỡ /search cũ (410), dùng /search/jql — xem https://developer.atlassian.com/changelog/#CHANGE-2046
+    const res = await fetch(`${cfg.jiraBaseUrl}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&fields=summary,status&maxResults=5`, {
       headers: { Authorization: `Basic ${auth}` },
     });
     if (!res.ok) throw new Error(`Jira API lỗi: ${res.status} ${await res.text()}`);
@@ -216,7 +217,8 @@ async function searchRelatedIssues(payload, cfg) {
 // searchJiraByKeyword — 2 hàm này chỉ khác nhau ở JQL/maxResults.
 async function runJiraSearch(jql, maxResults, trackedJiraLinks, cfg) {
   const auth = btoa(`${cfg.jiraEmail}:${cfg.jiraApiToken}`);
-  const res = await fetch(`${cfg.jiraBaseUrl}/rest/api/3/search?jql=${encodeURIComponent(jql)}&fields=summary,status&maxResults=${maxResults}`, {
+  // Jira đã gỡ /search cũ (410), dùng /search/jql — xem https://developer.atlassian.com/changelog/#CHANGE-2046
+  const res = await fetch(`${cfg.jiraBaseUrl}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&fields=summary,status&maxResults=${maxResults}`, {
     headers: { Authorization: `Basic ${auth}` },
   });
   if (!res.ok) throw new Error(`Jira API lỗi: ${res.status} ${await res.text()}`);
