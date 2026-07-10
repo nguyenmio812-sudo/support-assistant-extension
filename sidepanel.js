@@ -278,6 +278,98 @@ document.getElementById("syncAllBtn").addEventListener("click", async (e) => {
   }
 });
 
+document.getElementById("myUntrackedIssuesBtn").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Đang tải...";
+
+  try {
+    const trackedJiraLinks = (await getIssues()).map((i) => i.jiraLink).filter(Boolean);
+    const response = await chrome.runtime.sendMessage({ type: "GET_MY_UNTRACKED_ISSUES", payload: { trackedJiraLinks } });
+    if (response?.data?.error) alert(response.data.error);
+    renderJiraSearchResults(response?.data?.results || []);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+});
+
+async function runKeywordSearch() {
+  const input = document.getElementById("keywordSearchInput");
+  const keyword = input.value.trim();
+  if (!keyword) return;
+
+  const btn = document.getElementById("keywordSearchBtn");
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Đang tìm...";
+
+  try {
+    const trackedJiraLinks = (await getIssues()).map((i) => i.jiraLink).filter(Boolean);
+    const response = await chrome.runtime.sendMessage({ type: "SEARCH_JIRA_BY_KEYWORD", payload: { keyword, trackedJiraLinks } });
+    if (response?.data?.error) alert(response.data.error);
+    renderJiraSearchResults(response?.data?.results || []);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+document.getElementById("keywordSearchBtn").addEventListener("click", runKeywordSearch);
+document.getElementById("keywordSearchInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") runKeywordSearch();
+});
+
+// Dùng chung cho cả "Issue tôi đang follow" và tìm theo từ khoá — cùng 1 khu
+// vực hiển thị, cùng logic render/thêm issue, để không lặp code giữa 2 tính năng.
+function renderJiraSearchResults(results) {
+  const section = document.getElementById("jiraSearchSection");
+  const container = document.getElementById("jiraSearchContainer");
+  container.innerHTML = "";
+
+  if (results.length === 0) {
+    container.innerHTML = `<div class="empty">Không tìm thấy issue nào.</div>`;
+  } else {
+    results.forEach((result) => {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:6px; padding:4px 0; border-bottom:1px solid var(--border);";
+      row.innerHTML = `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">[${result.statusName || "?"}] <a href="${result.url}" target="_blank">${result.key}</a> — ${result.title}</span>`;
+
+      const addBtn = document.createElement("button");
+      addBtn.className = "secondary";
+      addBtn.style.cssText = "padding:1px 6px; font-size:11px; white-space:nowrap;";
+      addBtn.textContent = "+ Thêm";
+      addBtn.addEventListener("click", async () => {
+        addBtn.disabled = true;
+        await addIssue({ title: result.title, jiraLink: result.url, sourceLink: "" });
+        addBtn.textContent = "✓ Đã thêm";
+      });
+      row.appendChild(addBtn);
+      container.appendChild(row);
+    });
+  }
+
+  section.style.display = "block";
+}
+
+document.getElementById("jiraSearchCloseBtn").addEventListener("click", () => {
+  document.getElementById("jiraSearchSection").style.display = "none";
+  renderIssuesList();
+});
+
+// Đóng danh sách khi click ra ngoài — vẫn cập nhật danh sách chính để phản
+// ánh những issue vừa được thêm liên tiếp trong lúc mở. Không đóng khi click
+// vào chính các nút/ô mở ra khu vực này.
+document.addEventListener("click", (e) => {
+  const section = document.getElementById("jiraSearchSection");
+  if (section.style.display === "none") return;
+  const triggers = ["myUntrackedIssuesBtn", "keywordSearchBtn", "keywordSearchInput"].map((id) => document.getElementById(id));
+  if (section.contains(e.target) || triggers.includes(e.target)) return;
+  section.style.display = "none";
+  renderIssuesList();
+});
+
 document.getElementById("toggleManualFormBtn").addEventListener("click", () => {
   const form = document.getElementById("manualForm");
   const isHidden = form.style.display === "none";

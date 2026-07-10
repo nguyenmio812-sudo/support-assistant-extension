@@ -36,6 +36,10 @@ async function handleMessage(message) {
       return { data: await getJiraTitle(message.payload, cfg) };
     case "SEARCH_RELATED_ISSUES":
       return { data: await searchRelatedIssues(message.payload, cfg) };
+    case "GET_MY_UNTRACKED_ISSUES":
+      return { data: await getMyUntrackedIssues(message.payload, cfg) };
+    case "SEARCH_JIRA_BY_KEYWORD":
+      return { data: await searchJiraByKeyword(message.payload, cfg) };
     default:
       return { error: "Unknown message type: " + message.type };
   }
@@ -202,6 +206,61 @@ async function searchRelatedIssues(payload, cfg) {
         statusName: i.fields.status?.name,
       })),
     };
+  } catch (err) {
+    return { results: [], error: String(err) };
+  }
+}
+
+// Gọi Jira search API với 1 JQL cho sẵn, trả về issue đã lọc bỏ những cái đã
+// có trong trackedJiraLinks. Dùng chung cho getMyUntrackedIssues và
+// searchJiraByKeyword — 2 hàm này chỉ khác nhau ở JQL/maxResults.
+async function runJiraSearch(jql, maxResults, trackedJiraLinks, cfg) {
+  const auth = btoa(`${cfg.jiraEmail}:${cfg.jiraApiToken}`);
+  const res = await fetch(`${cfg.jiraBaseUrl}/rest/api/3/search?jql=${encodeURIComponent(jql)}&fields=summary,status&maxResults=${maxResults}`, {
+    headers: { Authorization: `Basic ${auth}` },
+  });
+  if (!res.ok) throw new Error(`Jira API lỗi: ${res.status} ${await res.text()}`);
+  const data = await res.json();
+
+  const tracked = new Set(trackedJiraLinks || []);
+  return (data.issues || [])
+    .map((i) => ({
+      key: i.key,
+      title: i.fields.summary,
+      url: `${cfg.jiraBaseUrl}/browse/${i.key}`,
+      statusName: i.fields.status?.name,
+    }))
+    .filter((issue) => !tracked.has(issue.url));
+}
+
+// Issue đang assign/watch cho chính agent (theo Jira account đăng nhập bằng
+// jiraEmail/jiraApiToken) nhưng CHƯA có trong Issue Tracking của extension.
+async function getMyUntrackedIssues(payload, cfg) {
+  if (!cfg.jiraBaseUrl || !cfg.jiraEmail || !cfg.jiraApiToken || !cfg.jiraProjectKey) {
+    return { results: [], error: "Chưa cấu hình đủ Jira (base URL / email / API token / project key) ở trang Cài đặt." };
+  }
+
+  try {
+    const jql = `project = "${cfg.jiraProjectKey}" AND (assignee = currentUser() OR watcher = currentUser()) AND statusCategory != Done ORDER BY updated DESC`;
+    const results = await runJiraSearch(jql, 20, payload.trackedJiraLinks, cfg);
+    return { results };
+  } catch (err) {
+    return { results: [], error: String(err) };
+  }
+}
+
+// Tìm issue Jira theo từ khoá tự do (agent gõ tay), loại bỏ issue đã có trong
+// Issue Tracking để không gợi ý trùng.
+async function searchJiraByKeyword(payload, cfg) {
+  if (!cfg.jiraBaseUrl || !cfg.jiraEmail || !cfg.jiraApiToken || !cfg.jiraProjectKey) {
+    return { results: [], error: "Chưa cấu hình đủ Jira (base URL / email / API token / project key) ở trang Cài đặt." };
+  }
+
+  try {
+    const keyword = (payload.keyword || "").replace(/"/g, '\\"');
+    const jql = `project = "${cfg.jiraProjectKey}" AND text ~ "${keyword}" ORDER BY updated DESC`;
+    const results = await runJiraSearch(jql, 10, payload.trackedJiraLinks, cfg);
+    return { results };
   } catch (err) {
     return { results: [], error: String(err) };
   }

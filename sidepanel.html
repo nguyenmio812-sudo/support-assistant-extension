@@ -151,6 +151,15 @@
       <button class="secondary" id="addCurrentBtn" style="flex:1;">+ Thêm tab hiện tại</button>
       <button class="secondary" id="toggleManualFormBtn" style="flex:1;">+ Thêm thủ công</button>
       <button class="secondary" id="syncAllBtn" style="flex:1;">🔄 Đồng bộ tất cả</button>
+      <button class="secondary" id="myUntrackedIssuesBtn" style="flex:1;">👤 Issue tôi đang follow</button>
+    </div>
+
+    <div id="jiraSearchSection" style="display:none; border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <strong style="font-size:13px;">🔍 Kết quả tìm kiếm Jira (chưa có trong Issue Tracking)</strong>
+        <button class="secondary" id="jiraSearchCloseBtn" style="padding:2px 8px; font-size:11px;">Đóng</button>
+      </div>
+      <div id="jiraSearchContainer" style="font-size:12px;"></div>
     </div>
 
     <div id="manualForm" style="display:none; border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:12px;">
@@ -163,6 +172,11 @@
         <button class="primary" id="manualSaveBtn" style="flex:1;">Lưu issue</button>
         <button class="secondary" id="manualCancelBtn" style="flex:1;">Huỷ</button>
       </div>
+    </div>
+
+    <div class="row">
+      <input type="text" id="keywordSearchInput" placeholder="Tìm issue Jira theo từ khoá..." style="flex:1;" />
+      <button class="secondary" id="keywordSearchBtn">🔍 Tìm</button>
     </div>
 
     <div id="issuesList"></div>
