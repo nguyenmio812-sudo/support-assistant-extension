@@ -129,7 +129,7 @@ async function getJiraStatus(payload, cfg) {
   const key = match[1];
 
   const auth = btoa(`${cfg.jiraEmail}:${cfg.jiraApiToken}`);
-  const res = await fetch(`${cfg.jiraBaseUrl}/rest/api/3/issue/${key}?fields=status`, {
+  const res = await fetch(`${cfg.jiraBaseUrl}/rest/api/3/issue/${key}?fields=status,created`, {
     headers: { Authorization: `Basic ${auth}` },
   });
   if (!res.ok) return { status: null };
@@ -147,7 +147,7 @@ async function getJiraStatus(payload, cfg) {
   if (categoryKey === "indeterminate") status = "inprogress";
   if (categoryKey === "done") status = "done";
 
-  return { status, statusName };
+  return { status, statusName, created: data.fields?.created || null };
 }
 
 async function getJiraTitle(payload, cfg) {

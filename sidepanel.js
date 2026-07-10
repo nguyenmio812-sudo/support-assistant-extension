@@ -7,7 +7,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(`panel-${btn.dataset.tab}`).classList.add("active");
-    if (btn.dataset.tab === "issues") renderIssues();
+    if (btn.dataset.tab === "issues") syncJiraStatuses();
   });
 });
 
@@ -211,7 +211,20 @@ document.getElementById("regenerateReplyBtn").addEventListener("click", async (e
 document.getElementById("addCurrentBtn").addEventListener("click", async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   await addIssue({ sourceLink: tab.url, title: "(chưa có tiêu đề — sửa thủ công)" });
-  renderIssues();
+  renderIssuesList();
+});
+
+document.getElementById("syncAllBtn").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Đang đồng bộ...";
+  try {
+    await syncJiraStatuses();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
 });
 
 document.getElementById("toggleManualFormBtn").addEventListener("click", () => {
@@ -259,7 +272,7 @@ document.getElementById("manualSaveBtn").addEventListener("click", async () => {
     }
     await addIssue({ title, sourceLink, jiraLink });
     document.getElementById("manualCancelBtn").click(); // reset form + ẩn
-    renderIssues();
+    renderIssuesList();
   } finally {
     btn.disabled = false;
     btn.textContent = originalLabel;
@@ -339,7 +352,64 @@ async function addIssue(partial) {
   await saveIssues(issues);
 }
 
-async function renderIssues() {
+// Tính số ngày đã mở kể từ khi issue được tạo trên Jira (jiraCreatedAt).
+// Trả về null nếu issue chưa từng sync với Jira nên chưa có mốc thời gian này.
+function issueAgeDays(issue) {
+  if (!issue.jiraCreatedAt) return null;
+  return Math.floor((Date.now() - new Date(issue.jiraCreatedAt).getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function buildIssueCard(issue) {
+  const card = document.createElement("div");
+  card.className = "issue-card" + (issue.priority ? " issue-card-priority" : "");
+
+  const statusClass = { todo: "status-todo", inprogress: "status-inprogress", done: "status-done" }[issue.status] || "status-todo";
+  // Ưu tiên hiển thị TÊN THẬT của status trên Jira (VD: "Passed", "QA Verified")
+  // thay vì chỉ 3 nhãn cố định, để agent thấy đúng trạng thái thực tế.
+  const statusLabel = issue.statusName || { todo: "To Do", inprogress: "In Progress", done: "Done" }[issue.status] || issue.status;
+  const ageDays = issueAgeDays(issue);
+
+  card.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:start;">
+      <strong>${issue.title}</strong>
+      <span style="display:flex; align-items:center; gap:4px;">
+        <span class="status-badge ${statusClass}">${statusLabel}</span>
+        <label style="display:flex; align-items:center; gap:2px; font-size:11px; cursor:pointer;" title="Đánh dấu ưu tiên">
+          <input type="checkbox" class="priority-checkbox" data-id="${issue.id}" ${issue.priority ? "checked" : ""} /> ⭐ Ưu tiên
+        </label>
+        ${issue.jiraLink ? `<button class="secondary resync-issue" data-id="${issue.id}" title="Đồng bộ lại tiêu đề/status từ Jira" style="padding:2px 6px; font-size:11px;">🔄</button>` : ""}
+      </span>
+    </div>
+    <div class="meta">
+      ${issue.sourceLink ? `<a href="${issue.sourceLink}" target="_blank">Nguồn ↗</a>` : ""}
+      ${issue.jiraLink ? ` · <a href="${issue.jiraLink}" target="_blank">Jira ↗</a>` : ` · <button class="secondary link-jira" data-id="${issue.id}">+ Link Jira</button>`}
+      ${issue.slackLink ? ` · <a href="${issue.slackLink}" target="_blank">Slack ↗</a>` : ""}
+      · <button class="secondary edit-title" data-id="${issue.id}" style="padding:1px 6px; font-size:11px;">✏️ Sửa tiêu đề</button>
+    </div>
+    ${ageDays !== null ? `<div class="issue-age" style="color:var(--muted); font-size:11px; margin-top:2px;">🕐 Đã mở ${ageDays} ngày</div>` : ""}
+    ${issue.jiraSyncError ? `
+      <div style="font-size:11px; color:var(--danger); margin-top:4px; word-break:break-word;">
+        ⚠️ Lỗi đồng bộ Jira: ${issue.jiraSyncError}
+      </div>` : ""}
+    ${issue.status === "done" && !issue.reportedToCustomer ? `
+      <div class="reminder-banner">
+        <span>✅ Jira đã ${issue.statusName || "Done"} — đã báo khách chưa?</span>
+      </div>` : ""}
+    <div style="margin-top:6px; display:flex; justify-content:space-between; align-items:center;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+        <input type="checkbox" class="mark-reported-checkbox" data-id="${issue.id}" ${issue.reportedToCustomer ? "checked" : ""} />
+        Đã báo khách
+      </label>
+      <button class="secondary remove-issue" data-id="${issue.id}">Xoá</button>
+    </div>
+  `;
+  return card;
+}
+
+// CHỈ đọc từ storage.local và render DOM — không gọi Jira API. Dùng cho mọi
+// thao tác cục bộ (tick priority/đã báo khách, xoá, sửa tiêu đề, link jira
+// thủ công) để không phải chờ đồng bộ lại toàn bộ issue mỗi lần bấm.
+async function renderIssuesList() {
   const issues = await getIssues();
   const list = document.getElementById("issuesList");
   list.innerHTML = "";
@@ -349,75 +419,27 @@ async function renderIssues() {
     return;
   }
 
-  // Đồng bộ status mới nhất từ Jira — LƯU LẠI LỖI nếu có, không âm thầm bỏ
-  // qua như bản trước (đây là lý do status "Passed" trên Jira nhưng UI vẫn
-  // hiện "To Do" mà không ai biết vì sao — API call đang lỗi mà không hiển thị).
-  for (const issue of issues) {
-    if (issue.jiraLink && issue.status !== "done") {
-      const res = await chrome.runtime.sendMessage({ type: "GET_JIRA_STATUS", payload: { jiraLink: issue.jiraLink } });
-      if (res?.data?.status) {
-        issue.status = res.data.status;
-        if (res.data.statusName) issue.statusName = res.data.statusName; // tên thật trên Jira, VD: "Passed"
-        issue.jiraSyncError = null;
-      } else if (res?.error) {
-        issue.jiraSyncError = res.error;
-      } else if (res?.data?.status == null) {
-        // Gọi API thành công nhưng không trích được status (VD: sai định dạng
-        // link Jira nên không tách được issue key, hoặc issue không tồn tại)
-        issue.jiraSyncError = "Không lấy được status — kiểm tra lại link Jira có đúng dạng .../browse/PROJ-123 không.";
-      }
-    }
+  // Tách riêng issue ưu tiên thành section trên cùng, thay vì chỉ sort + border
+  // trái như trước — dễ nhận ra hơn khi danh sách dài. Giữ nguyên thứ tự tương
+  // đối trong từng nhóm (không sort lại theo tiêu chí khác).
+  const priorityIssues = issues.filter((i) => i.priority);
+  const otherIssues = issues.filter((i) => !i.priority);
+
+  if (priorityIssues.length > 0) {
+    const heading = document.createElement("div");
+    heading.textContent = "⭐ Ưu tiên";
+    heading.style.cssText = "font-size:12px; font-weight:700; color:#f59e0b; margin-bottom:6px;";
+    list.appendChild(heading);
+    priorityIssues.forEach((issue) => list.appendChild(buildIssueCard(issue)));
   }
-  await saveIssues(issues);
 
-  // Issue ưu tiên (priority = true) luôn nổi lên đầu; sort ổn định nên thứ tự
-  // tương đối giữa các issue cùng nhóm ưu tiên không đổi.
-  issues.sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0));
-
-  issues.forEach((issue) => {
-    const card = document.createElement("div");
-    card.className = "issue-card" + (issue.priority ? " issue-card-priority" : "");
-
-    const statusClass = { todo: "status-todo", inprogress: "status-inprogress", done: "status-done" }[issue.status] || "status-todo";
-    // Ưu tiên hiển thị TÊN THẬT của status trên Jira (VD: "Passed", "QA Verified")
-    // thay vì chỉ 3 nhãn cố định, để agent thấy đúng trạng thái thực tế.
-    const statusLabel = issue.statusName || { todo: "To Do", inprogress: "In Progress", done: "Done" }[issue.status] || issue.status;
-
-    card.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:start;">
-        <strong>${issue.title}</strong>
-        <span style="display:flex; align-items:center; gap:4px;">
-          <span class="status-badge ${statusClass}">${statusLabel}</span>
-          <label style="display:flex; align-items:center; gap:2px; font-size:11px; cursor:pointer;" title="Đánh dấu ưu tiên">
-            <input type="checkbox" class="priority-checkbox" data-id="${issue.id}" ${issue.priority ? "checked" : ""} /> ⭐ Ưu tiên
-          </label>
-          ${issue.jiraLink ? `<button class="secondary resync-issue" data-id="${issue.id}" title="Đồng bộ lại tiêu đề/status từ Jira" style="padding:2px 6px; font-size:11px;">🔄</button>` : ""}
-        </span>
-      </div>
-      <div class="meta">
-        ${issue.sourceLink ? `<a href="${issue.sourceLink}" target="_blank">Nguồn ↗</a>` : ""}
-        ${issue.jiraLink ? ` · <a href="${issue.jiraLink}" target="_blank">Jira ↗</a>` : ` · <button class="secondary link-jira" data-id="${issue.id}">+ Link Jira</button>`}
-        ${issue.slackLink ? ` · <a href="${issue.slackLink}" target="_blank">Slack ↗</a>` : ""}
-        · <button class="secondary edit-title" data-id="${issue.id}" style="padding:1px 6px; font-size:11px;">✏️ Sửa tiêu đề</button>
-      </div>
-      ${issue.jiraSyncError ? `
-        <div style="font-size:11px; color:var(--danger); margin-top:4px; word-break:break-word;">
-          ⚠️ Lỗi đồng bộ Jira: ${issue.jiraSyncError}
-        </div>` : ""}
-      ${issue.status === "done" && !issue.reportedToCustomer ? `
-        <div class="reminder-banner">
-          <span>✅ Jira đã ${issue.statusName || "Done"} — đã báo khách chưa?</span>
-        </div>` : ""}
-      <div style="margin-top:6px; display:flex; justify-content:space-between; align-items:center;">
-        <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
-          <input type="checkbox" class="mark-reported-checkbox" data-id="${issue.id}" ${issue.reportedToCustomer ? "checked" : ""} />
-          Đã báo khách
-        </label>
-        <button class="secondary remove-issue" data-id="${issue.id}">Xoá</button>
-      </div>
-    `;
-    list.appendChild(card);
-  });
+  if (otherIssues.length > 0) {
+    const heading = document.createElement("div");
+    heading.textContent = "Khác";
+    heading.style.cssText = `font-size:12px; font-weight:700; color:var(--muted); margin-bottom:6px;${priorityIssues.length > 0 ? " margin-top:12px;" : ""}`;
+    list.appendChild(heading);
+    otherIssues.forEach((issue) => list.appendChild(buildIssueCard(issue)));
+  }
 
   list.querySelectorAll(".resync-issue").forEach((b) =>
     b.addEventListener("click", async (e) => {
@@ -445,6 +467,7 @@ async function renderIssues() {
       } else if (statusRes?.error) {
         target.jiraSyncError = statusRes.error;
       }
+      if (statusRes?.data?.created) target.jiraCreatedAt = statusRes.data.created;
 
       // Nếu tiêu đề vẫn đang là placeholder, thử lấy lại luôn
       if (target.title === "(chưa có tiêu đề — sửa thủ công)") {
@@ -454,7 +477,7 @@ async function renderIssues() {
       }
 
       await saveIssues(issues);
-      renderIssues();
+      renderIssuesList();
     })
   );
 
@@ -468,7 +491,7 @@ async function renderIssues() {
       if (newTitle === null) return; // huỷ
       target.title = newTitle.trim() || "(chưa có tiêu đề — sửa thủ công)";
       await saveIssues(issues);
-      renderIssues();
+      renderIssuesList();
     })
   );
 
@@ -476,7 +499,7 @@ async function renderIssues() {
     b.addEventListener("click", async (e) => {
       const issues = (await getIssues()).filter((i) => i.id !== e.target.dataset.id);
       await saveIssues(issues);
-      renderIssues();
+      renderIssuesList();
     })
   );
 
@@ -488,19 +511,19 @@ async function renderIssues() {
       const target = issues.find((i) => i.id === e.target.dataset.id);
       if (target) target.reportedToCustomer = e.target.checked;
       await saveIssues(issues);
-      renderIssues();
+      renderIssuesList();
     })
   );
 
-  // Checkbox ưu tiên — tick/bỏ tick xong render lại ngay để card tự nhảy lên
-  // đầu/xuống dưới theo đúng thứ tự ưu tiên mới.
+  // Checkbox ưu tiên — tick/bỏ tick xong render lại ngay để card tự nhảy sang
+  // đúng section (⭐ Ưu tiên / Khác) theo đúng trạng thái mới.
   list.querySelectorAll(".priority-checkbox").forEach((cb) =>
     cb.addEventListener("change", async (e) => {
       const issues = await getIssues();
       const target = issues.find((i) => i.id === e.target.dataset.id);
       if (target) target.priority = e.target.checked;
       await saveIssues(issues);
-      renderIssues();
+      renderIssuesList();
     })
   );
 
@@ -512,9 +535,40 @@ async function renderIssues() {
       const target = issues.find((i) => i.id === e.target.dataset.id);
       if (target) target.jiraLink = url;
       await saveIssues(issues);
-      renderIssues();
+      renderIssuesList();
     })
   );
 }
 
-renderIssues();
+// Bắn TẤT CẢ request GET_JIRA_STATUS song song (Promise.all) thay vì tuần tự
+// — chỉ gọi khi chuyển sang tab Issue Tracking hoặc bấm "🔄 Đồng bộ tất cả",
+// không gọi ngầm mỗi lần render cục bộ như renderIssuesList().
+async function syncJiraStatuses() {
+  const issues = await getIssues();
+
+  await Promise.all(
+    issues.map(async (issue) => {
+      if (!issue.jiraLink || issue.status === "done") return;
+
+      const res = await chrome.runtime.sendMessage({ type: "GET_JIRA_STATUS", payload: { jiraLink: issue.jiraLink } });
+      if (res?.data?.status) {
+        issue.status = res.data.status;
+        if (res.data.statusName) issue.statusName = res.data.statusName; // tên thật trên Jira, VD: "Passed"
+        issue.jiraSyncError = null;
+      } else if (res?.error) {
+        issue.jiraSyncError = res.error;
+      } else if (res?.data?.status == null) {
+        // Gọi API thành công nhưng không trích được status (VD: sai định dạng
+        // link Jira nên không tách được issue key, hoặc issue không tồn tại)
+        issue.jiraSyncError = "Không lấy được status — kiểm tra lại link Jira có đúng dạng .../browse/PROJ-123 không.";
+      }
+      // Chỉ ghi đè khi có giá trị mới — không xoá mốc thời gian cũ nếu lần sync này lỗi.
+      if (res?.data?.created) issue.jiraCreatedAt = res.data.created;
+    })
+  );
+
+  await saveIssues(issues);
+  await renderIssuesList();
+}
+
+renderIssuesList();
