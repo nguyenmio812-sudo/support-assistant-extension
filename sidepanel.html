@@ -75,6 +75,9 @@
     border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 10px; font-size: 12px;
   }
   .issue-card .meta { color: var(--muted); margin-top: 4px; }
+  .issue-card-priority {
+    border-left: 4px solid #f59e0b; background: #fffbeb;
+  }
   .status-badge {
     display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
   }
@@ -110,8 +113,8 @@
         <option value="en">Tóm tắt: English</option>
       </select>
       <select id="replyLangSelect">
-        <option value="vi">Trả lời: Tiếng Việt</option>
         <option value="en">Trả lời: English</option>
+        <option value="vi">Trả lời: Tiếng Việt</option>
       </select>
     </div>
     <button class="primary" id="summarizeBtn">Tóm tắt cuộc trò chuyện</button>
@@ -128,7 +131,11 @@
       <div id="replyDraftSection" style="display:none; margin-top:10px; border:1px solid var(--border); border-radius:8px; padding:10px;">
         <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Gợi ý trả lời khách — xem lại/chỉnh sửa trước khi copy:</label>
         <textarea id="replyDraftText" rows="6" style="width:100%; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit; resize:vertical;"></textarea>
-        <button class="primary" id="copyReplyBtn" style="margin-top:8px;">📋 Copy nội dung</button>
+        <textarea id="replyHintInput" rows="2" placeholder="Thêm ý agent muốn đưa vào câu trả lời (VD: đã fix trên bản 2.3, hẹn khách 3 ngày)..." style="width:100%; margin-top:6px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-family:inherit; resize:vertical;"></textarea>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button class="primary" id="copyReplyBtn">📋 Copy nội dung</button>
+          <button class="secondary" id="regenerateReplyBtn">🔁 Tạo lại câu trả lời</button>
+        </div>
       </div>
     </div>
   </div>

@@ -83,7 +83,10 @@ async function summarizeConversation(payload, cfg) {
 }
 
 async function draftReply(data, cfg) {
-  const systemPrompt = `Viết 1 câu trả lời ngắn gọn, lịch sự cho khách hàng bằng ngôn ngữ ${data.replyLang || "vi"}, dựa trên tóm tắt vấn đề. Chỉ trả về nội dung tin nhắn, không thêm giải thích.`;
+  let systemPrompt = `Viết 1 câu trả lời ngắn gọn, lịch sự cho khách hàng bằng ngôn ngữ ${data.replyLang || "vi"}, dựa trên tóm tắt vấn đề. Chỉ trả về nội dung tin nhắn, không thêm giải thích.`;
+  if (data.agentHint) {
+    systemPrompt += `\nLưu ý bổ sung từ agent, PHẢI đưa vào câu trả lời: ${data.agentHint}`;
+  }
   const reply = await callClaude(cfg, systemPrompt, data.summary);
   return { reply };
 }

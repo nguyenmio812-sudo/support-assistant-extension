@@ -143,7 +143,12 @@ function renderSummary(data, sourceUrl, debugInfo) {
   document.getElementById("replyDraftSection").style.display = "none";
 }
 
+// Giữ lại data gốc của lần tóm tắt gần nhất để nút "Tạo lại câu trả lời" có
+// thể gửi lại đúng context, kèm agentHint bổ sung, mà không cần tóm tắt lại.
+let lastSummaryData = null;
+
 async function draftReply(data, btn) {
+  lastSummaryData = data;
   const originalHtml = btn?.innerHTML;
   if (btn) { btn.disabled = true; btn.innerHTML = "Đang soạn gợi ý..."; }
 
@@ -173,6 +178,32 @@ document.getElementById("copyReplyBtn").addEventListener("click", () => {
   const original = btn.textContent;
   btn.textContent = "✓ Đã copy!";
   setTimeout(() => { btn.textContent = original; }, 1500);
+});
+
+document.getElementById("regenerateReplyBtn").addEventListener("click", async (e) => {
+  if (!lastSummaryData) return;
+  const btn = e.currentTarget;
+  const hintValue = document.getElementById("replyHintInput").value.trim();
+
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Đang tạo lại...";
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "DRAFT_REPLY",
+      payload: { ...lastSummaryData, agentHint: hintValue },
+    });
+    if (response.error) {
+      alert(response.error);
+      return;
+    }
+    // Không xoá #replyHintInput — agent có thể bấm lại nhiều lần với ý bổ sung khác.
+    document.getElementById("replyDraftText").value = response.data.reply;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
 });
 
 // ---------- TAB 2: Issue Tracking ----------
@@ -302,6 +333,7 @@ async function addIssue(partial) {
     status: partial.status || "todo", // todo | inprogress | done
     reminderSent: false,
     reportedToCustomer: false,
+    priority: partial.priority || false,
     createdAt: Date.now(),
   });
   await saveIssues(issues);
@@ -338,9 +370,13 @@ async function renderIssues() {
   }
   await saveIssues(issues);
 
+  // Issue ưu tiên (priority = true) luôn nổi lên đầu; sort ổn định nên thứ tự
+  // tương đối giữa các issue cùng nhóm ưu tiên không đổi.
+  issues.sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0));
+
   issues.forEach((issue) => {
     const card = document.createElement("div");
-    card.className = "issue-card";
+    card.className = "issue-card" + (issue.priority ? " issue-card-priority" : "");
 
     const statusClass = { todo: "status-todo", inprogress: "status-inprogress", done: "status-done" }[issue.status] || "status-todo";
     // Ưu tiên hiển thị TÊN THẬT của status trên Jira (VD: "Passed", "QA Verified")
@@ -352,6 +388,9 @@ async function renderIssues() {
         <strong>${issue.title}</strong>
         <span style="display:flex; align-items:center; gap:4px;">
           <span class="status-badge ${statusClass}">${statusLabel}</span>
+          <label style="display:flex; align-items:center; gap:2px; font-size:11px; cursor:pointer;" title="Đánh dấu ưu tiên">
+            <input type="checkbox" class="priority-checkbox" data-id="${issue.id}" ${issue.priority ? "checked" : ""} /> ⭐ Ưu tiên
+          </label>
           ${issue.jiraLink ? `<button class="secondary resync-issue" data-id="${issue.id}" title="Đồng bộ lại tiêu đề/status từ Jira" style="padding:2px 6px; font-size:11px;">🔄</button>` : ""}
         </span>
       </div>
@@ -448,6 +487,18 @@ async function renderIssues() {
       const issues = await getIssues();
       const target = issues.find((i) => i.id === e.target.dataset.id);
       if (target) target.reportedToCustomer = e.target.checked;
+      await saveIssues(issues);
+      renderIssues();
+    })
+  );
+
+  // Checkbox ưu tiên — tick/bỏ tick xong render lại ngay để card tự nhảy lên
+  // đầu/xuống dưới theo đúng thứ tự ưu tiên mới.
+  list.querySelectorAll(".priority-checkbox").forEach((cb) =>
+    cb.addEventListener("change", async (e) => {
+      const issues = await getIssues();
+      const target = issues.find((i) => i.id === e.target.dataset.id);
+      if (target) target.priority = e.target.checked;
       await saveIssues(issues);
       renderIssues();
     })
