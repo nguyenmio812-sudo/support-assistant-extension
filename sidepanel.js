@@ -139,8 +139,59 @@ function renderSummary(data, sourceUrl, debugInfo) {
     actionsEl.appendChild(b);
   });
 
+  // Fire-and-forget — không chờ Jira search xong mới hiện phần còn lại của tóm tắt.
+  renderRelatedIssues(data.tags, data.summary, sourceUrl);
+
   // Ẩn khung gợi ý trả lời cũ (nếu có từ lần tóm tắt trước) khi tóm tắt mới
   document.getElementById("replyDraftSection").style.display = "none";
+  // Ẩn gợi ý issue liên quan cũ — tránh hiện nhầm kết quả của lần tóm tắt trước
+  // trong lúc chờ kết quả mới trả về.
+  document.getElementById("relatedIssuesSection").style.display = "none";
+}
+
+async function renderRelatedIssues(tags, summaryText, sourceUrl) {
+  const section = document.getElementById("relatedIssuesSection");
+  const container = document.getElementById("relatedIssuesContainer");
+
+  if (!tags || tags.length === 0) return;
+
+  const response = await chrome.runtime.sendMessage({ type: "SEARCH_RELATED_ISSUES", payload: { tags, summaryText } });
+  const results = response?.data?.results || [];
+  if (results.length === 0) return; // không hiện "không tìm thấy gì" — tránh gây rối UI
+
+  const trackedIssues = await getIssues();
+  container.innerHTML = "";
+
+  results.forEach((result) => {
+    const alreadyTracked = trackedIssues.some((issue) => issue.jiraLink === result.url);
+    const shortTitle = result.title.length > 50 ? result.title.slice(0, 50) + "…" : result.title;
+
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:6px; font-size:12px; padding:4px 0; border-bottom:1px solid var(--border);";
+    row.innerHTML = `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">[${result.statusName || "?"}] <a href="${result.url}" target="_blank">${result.key}</a> — ${shortTitle}</span>`;
+
+    if (alreadyTracked) {
+      const span = document.createElement("span");
+      span.style.cssText = "color:var(--muted); font-size:11px; white-space:nowrap;";
+      span.textContent = "✓ Đã theo dõi";
+      row.appendChild(span);
+    } else {
+      const btn = document.createElement("button");
+      btn.className = "secondary";
+      btn.style.cssText = "padding:1px 6px; font-size:11px; white-space:nowrap;";
+      btn.textContent = "+ Thêm";
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        await addIssue({ title: result.title, jiraLink: result.url, sourceLink: sourceUrl });
+        btn.textContent = "✓ Đã thêm";
+      });
+      row.appendChild(btn);
+    }
+
+    container.appendChild(row);
+  });
+
+  section.style.display = "block";
 }
 
 // Giữ lại data gốc của lần tóm tắt gần nhất để nút "Tạo lại câu trả lời" có

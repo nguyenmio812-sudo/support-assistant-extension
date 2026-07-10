@@ -34,6 +34,8 @@ async function handleMessage(message) {
       return { data: await getJiraStatus(message.payload, cfg) };
     case "GET_JIRA_TITLE":
       return { data: await getJiraTitle(message.payload, cfg) };
+    case "SEARCH_RELATED_ISSUES":
+      return { data: await searchRelatedIssues(message.payload, cfg) };
     default:
       return { error: "Unknown message type: " + message.type };
   }
@@ -167,4 +169,40 @@ async function getJiraTitle(payload, cfg) {
   const data = await res.json();
 
   return { title: data.fields?.summary || null };
+}
+
+// Gợi ý issue Jira liên quan bằng JQL text search (không cần Rovo/AI search).
+// KHÔNG throw ra ngoài — JQL sai cú pháp hay Jira chưa cấu hình không được
+// làm vỡ luồng tóm tắt, chỉ nên âm thầm không hiện gợi ý.
+async function searchRelatedIssues(payload, cfg) {
+  if (!cfg.jiraBaseUrl || !cfg.jiraEmail || !cfg.jiraApiToken || !cfg.jiraProjectKey) {
+    return { results: [], error: "Chưa cấu hình đủ Jira" };
+  }
+
+  try {
+    const tags = (payload.tags || []).slice(0, 3);
+    if (tags.length === 0) return { results: [] };
+
+    // Dùng tag đầu tiên làm từ khoá chính; escape dấu ngoặc kép để không phá JQL.
+    const primaryTag = tags[0].replace(/"/g, '\\"');
+    const jql = `project = "${cfg.jiraProjectKey}" AND text ~ "${primaryTag}" ORDER BY updated DESC`;
+
+    const auth = btoa(`${cfg.jiraEmail}:${cfg.jiraApiToken}`);
+    const res = await fetch(`${cfg.jiraBaseUrl}/rest/api/3/search?jql=${encodeURIComponent(jql)}&fields=summary,status&maxResults=5`, {
+      headers: { Authorization: `Basic ${auth}` },
+    });
+    if (!res.ok) throw new Error(`Jira API lỗi: ${res.status} ${await res.text()}`);
+    const data = await res.json();
+
+    return {
+      results: (data.issues || []).map((i) => ({
+        key: i.key,
+        title: i.fields.summary,
+        url: `${cfg.jiraBaseUrl}/browse/${i.key}`,
+        statusName: i.fields.status?.name,
+      })),
+    };
+  } catch (err) {
+    return { results: [], error: String(err) };
+  }
 }
