@@ -24,12 +24,12 @@ Agent đang mất thời gian vì:
 │        │                     │
 │  ┌─────▼─────┐               │
 │  │ Background │               │
-│  │ Service    │───────────────┼──► Claude API (tóm tắt/tag/priority/dịch)
+│  │ Service    │───────────────┼──► OpenAI Responses API (tóm tắt/tag/priority/dịch)
 │  │ Worker     │───────────────┼──► Jira REST API (tạo/link/lấy status issue)
 │  └───────────┘───────────────┼──► Slack API (đọc trạng thái, gửi reminder)
 └─────────────────────────────┘
                 │
-        chrome.storage.sync  (cấu hình cá nhân, API key)
+        chrome.storage.local (MVP nội bộ; KHÔNG phải secret vault)
         + Backend nhẹ (khuyến nghị) để đồng bộ issue-tracking
           giữa nhiều agent (xem mục 5)
 ```
@@ -40,19 +40,19 @@ Agent đang mất thời gian vì:
 
 ### 3.1 Đọc & tóm tắt hội thoại (nút "Tóm tắt")
 - Content script trích xuất toàn bộ tin nhắn của conversation đang mở trên Crisp (dùng Crisp API `list_website_conversation_messages` nếu có OAuth, ưu tiên hơn scrape DOM vì bền hơn khi Crisp đổi UI).
-- Gửi qua background worker → gọi Claude API để tóm tắt theo prompt chuẩn hoá (vấn đề chính, đã thử gì, đang chờ gì).
+- Gửi qua background worker → gọi OpenAI Responses API với JSON schema để tóm tắt theo prompt chuẩn hoá.
 - Hiển thị tóm tắt + 3 nút hành động gợi ý (giống ảnh: "Highlight excerpts", "Clarify key concepts", trong case của bạn có thể là "Tạo issue Jira", "Trả lời khách", "Đánh dấu ưu tiên").
 
 ### 3.2 Chọn ngôn ngữ chat
 - Dropdown ngôn ngữ (VD: Việt/Anh/Thái…) áp cho: (a) ngôn ngữ tóm tắt hiển thị cho agent, (b) ngôn ngữ gợi ý câu trả lời để gửi khách — tách 2 setting riêng vì agent có thể đọc tiếng Anh nhưng cần trả lời khách bằng tiếng Việt hoặc ngược lại.
 
 ### 3.3 Priority tự động
-- Claude chấm điểm dựa trên: từ khoá khẩn cấp, số lần khách nhắn lại, thời gian chờ, có nhắc "refund/broken/urgent" không.
+- OpenAI model chấm điểm dựa trên: từ khoá khẩn cấp, số lần khách nhắn lại, thời gian chờ, có nhắc "refund/broken/urgent" không.
 - Hiển thị nhãn P1–P4, **cho phép agent override thủ công** (rất quan trọng — model gợi ý không được khoá cứng).
 
 ### 3.4 Tag phân loại tự động
 - Danh sách tag cấu hình sẵn theo domain nghiệp vụ (Bug, Billing, Feature Request, Account, Shopify integration…).
-- Claude chọn tag phù hợp nhất + agent có thể thêm/xoá tag thủ công (multi-select).
+- OpenAI model chọn tag phù hợp nhất + agent có thể thêm/xoá tag thủ công (multi-select).
 - Lưu tag vào Crisp conversation qua `update_website_conversation_meta` để đồng bộ ngược lại Crisp segment.
 
 ### 3.5 Tab "Issue Tracking" (phần phức tạp nhất — nên làm kỹ)
@@ -71,13 +71,13 @@ UI dạng list, mỗi row = 1 issue đang theo dõi, gồm:
 
 ## 4. Quyền & bảo mật
 - `host_permissions` chỉ nên xin đúng domain: Crisp, Jira Cloud, Slack — không xin `<all_urls>`.
-- API key Claude / Jira token **không hardcode trong extension**, lưu ở backend, extension chỉ gọi qua backend proxy có auth theo agent (SSO nội bộ).
-- Vì extension đọc nội dung chat khách hàng → cần rà soát dữ liệu cá nhân (PII) trước khi gửi qua Claude API, tuân theo chính sách bảo mật dữ liệu khách hàng của công ty.
+- OpenAI API key / Jira token **không hardcode trong extension**. Giai đoạn 1 lưu local chỉ để thử nghiệm; production lưu ở backend và extension gọi proxy có auth theo agent.
+- Vì extension đọc nội dung chat khách hàng → cần rà soát PII trước khi gửi qua OpenAI API và tuân theo chính sách dữ liệu khách hàng.
 
 ## 5. Đề xuất tech stack
 - **Extension:** Manifest V3, Side Panel API, vanilla JS hoặc React nhẹ (nếu team quen React, dùng Vite + CRXJS để build nhanh).
-- **Backend (khuyến nghị, không bắt buộc ở MVP):** Cloudflare Workers + KV/D1, hoặc Supabase — dùng để: lưu issue-tracking dùng chung, proxy gọi Claude/Jira/Slack an toàn, nhận webhook Jira.
-- **AI:** Claude API (model Sonnet là đủ cho tóm tắt/tag/priority, không cần model nặng).
+- **Backend (khuyến nghị, không bắt buộc ở MVP):** Cloudflare Workers + KV/D1, hoặc Supabase — dùng để: lưu issue-tracking dùng chung, proxy gọi OpenAI/Jira/Slack an toàn, nhận webhook Jira.
+- **AI:** OpenAI Responses API; model cấu hình trong Settings, mặc định `gpt-5-mini` ở Giai đoạn 1.
 
 ## 6. Roadmap đề xuất
 | Phase | Nội dung | Thời gian ước tính |
@@ -94,4 +94,4 @@ UI dạng list, mỗi row = 1 issue đang theo dõi, gồm:
 
 ---
 
-Tôi đã dựng kèm một **scaffold MVP** (Phase 1) ở phần code bên dưới — manifest, side panel UI, content script đọc Crisp, background worker gọi Claude API — để team có thể chạy thử và mở rộng dần theo roadmap trên.
+Scaffold Giai đoạn 1 gồm manifest, side panel, content script đọc Crisp và background worker gọi OpenAI/Jira. Bản này vẫn cần backend proxy trước khi rollout production cho cả team.

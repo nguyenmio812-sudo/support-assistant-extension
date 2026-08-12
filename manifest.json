@@ -1,13 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Support Assistant (Internal)",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Tóm tắt, gợi ý priority/tag và theo dõi issue cho team support. Chỉ đọc nội dung tab khi agent bấm nút Tóm tắt.",
-  "permissions": ["storage", "unlimitedStorage", "activeTab", "scripting", "sidePanel"],
+  "permissions": ["storage", "activeTab", "scripting", "sidePanel"],
   "host_permissions": [
-    "http://*/*",
-    "https://*/*"
+    "https://api.openai.com/*"
   ],
+  "optional_host_permissions": ["https://*.atlassian.net/*"],
   "action": {
     "default_title": "Mở Support Assistant"
   },

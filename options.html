@@ -10,15 +10,20 @@
   input { width: 100%; padding: 8px; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 13px; }
   button { margin-top: 20px; background: #5b21b6; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; }
   .hint { font-size: 12px; color: #6b7280; margin-top: 2px; }
-  .saved { color: #16a34a; font-size: 13px; margin-top: 10px; display: none; }
+  .saved { color: #16a34a; font-size: 13px; margin-top: 10px; display: none; white-space: pre-wrap; }
+  .warning { background:#fff7ed; border:1px solid #fdba74; color:#9a3412; padding:10px; border-radius:6px; font-size:12px; line-height:1.5; }
 </style>
 </head>
 <body>
   <h1>⚙️ Cài đặt Support Assistant</h1>
 
-  <h2>Claude API</h2>
+  <div class="warning"><strong>Cảnh báo bảo mật:</strong> API key lưu trực tiếp trong extension chỉ phù hợp cho thử nghiệm nội bộ. Gói ChatGPT không bao gồm API; cần OpenAI API key và billing riêng. Không dùng key có hạn mức lớn.</div>
+
+  <h2>OpenAI API</h2>
   <label>API Key</label>
-  <input type="password" id="claudeApiKey" placeholder="sk-ant-..." />
+  <input type="password" id="openaiApiKey" placeholder="sk-..." autocomplete="off" />
+  <label>Model</label>
+  <input type="text" id="openaiModel" placeholder="gpt-5-mini" />
   <div class="hint">Khuyến nghị: dùng key qua backend proxy nội bộ thay vì lưu trực tiếp ở đây khi lên production (xem PROPOSAL.md).</div>
 
   <h2>Jira</h2>
@@ -27,13 +32,14 @@
   <label>Email</label>
   <input type="text" id="jiraEmail" placeholder="agent@company.com" />
   <label>API Token</label>
-  <input type="password" id="jiraApiToken" />
+  <input type="password" id="jiraApiToken" autocomplete="off" />
   <label>Project Key</label>
   <input type="text" id="jiraProjectKey" placeholder="SUP" />
 
   <button id="saveBtn">Lưu cài đặt</button>
   <div class="saved" id="savedMsg">Đã lưu ✓</div>
 
+  <script src="common.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

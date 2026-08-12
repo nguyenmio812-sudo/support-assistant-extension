@@ -1,6 +1,49 @@
 // sidepanel.js — logic cho UI. Toàn bộ gọi API thật đều đi qua background.js
 // để không lộ token trong context của trang web.
 
+const {
+  cleanText,
+  normalizeCrispUrl,
+  normalizeJiraIssueUrl,
+  safeErrorMessage,
+} = SupportAssistantCommon;
+
+function clearElement(element) {
+  while (element.firstChild) element.removeChild(element.firstChild);
+}
+
+function createExternalLink(label, href) {
+  const link = document.createElement("a");
+  link.textContent = label;
+  try {
+    const url = new URL(href);
+    const allowedHost = /(^|\.)crisp\.chat$/i.test(url.hostname) || url.hostname.endsWith(".atlassian.net");
+    if (url.protocol !== "https:" || !allowedHost) throw new Error("blocked");
+    link.href = url.toString();
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+  } catch {
+    link.removeAttribute("href");
+    link.title = "Link cũ không an toàn hoặc không thuộc domain được phép.";
+  }
+  return link;
+}
+
+function createSmallButton(label, className, id) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `secondary ${className}`;
+  button.dataset.id = id;
+  button.textContent = label;
+  button.style.cssText = "padding:1px 6px; font-size:11px;";
+  return button;
+}
+
+async function normalizeConfiguredJiraLink(value) {
+  const { jiraBaseUrl } = await chrome.storage.local.get("jiraBaseUrl");
+  return normalizeJiraIssueUrl(value, jiraBaseUrl);
+}
+
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
@@ -31,9 +74,10 @@ document.getElementById("summarizeBtn").addEventListener("click", async () => {
     }
 
     // Không thể inject vào các trang nội bộ của trình duyệt / Chrome Web Store
-    const blockedPrefixes = ["chrome://", "edge://", "chrome-extension://", "about:", "https://chrome.google.com/webstore"];
-    if (blockedPrefixes.some((p) => tab.url?.startsWith(p))) {
-      alert("Không thể đọc nội dung của trang hệ thống này. Hãy mở tab chứa cuộc trò chuyện support rồi thử lại.");
+    let activeUrl;
+    try { activeUrl = new URL(tab.url); } catch { activeUrl = null; }
+    if (!activeUrl || activeUrl.protocol !== "https:" || !/(^|\.)crisp\.chat$/i.test(activeUrl.hostname)) {
+      alert("Vì lý do bảo mật, extension chỉ đọc hội thoại trên domain HTTPS thuộc crisp.chat.");
       return;
     }
 
@@ -66,7 +110,9 @@ document.getElementById("summarizeBtn").addEventListener("click", async () => {
     // Chọn frame có textLength lớn nhất — đại diện cho nội dung hội thoại đầy đủ nhất
     const conversation = validResults.sort((a, b) => (b.textLength || 0) - (a.textLength || 0))[0];
 
-    btn.textContent = "Đang tóm tắt (Claude)...";
+    if (!confirm(`Chuẩn bị gửi tối đa ${conversation.textLength || 0} ký tự từ hội thoại này tới OpenAI API sau khi che email/số điện thoại/token. Tiếp tục?`)) return;
+
+    btn.textContent = "Đang tóm tắt (OpenAI)...";
 
     const lang = document.getElementById("langSelect").value;
     const replyLang = document.getElementById("replyLangSelect").value;
@@ -113,10 +159,15 @@ function renderSummary(data, sourceUrl, debugInfo) {
   }
 
   const p = document.getElementById("priorityLabel");
-  p.innerHTML = `Priority: <span class="priority-${data.priority}">${data.priority}</span>`;
+  clearElement(p);
+  p.append("Priority: ");
+  const priority = document.createElement("span");
+  priority.className = `priority-${["P1", "P2", "P3", "P4"].includes(data.priority) ? data.priority : "P4"}`;
+  priority.textContent = data.priority;
+  p.appendChild(priority);
 
   const tagsEl = document.getElementById("tagsContainer");
-  tagsEl.innerHTML = "";
+  clearElement(tagsEl);
   (data.tags || []).forEach((t) => {
     const span = document.createElement("span");
     span.className = "chip";
@@ -125,7 +176,7 @@ function renderSummary(data, sourceUrl, debugInfo) {
   });
 
   const actionsEl = document.getElementById("suggestedActions");
-  actionsEl.innerHTML = "";
+  clearElement(actionsEl);
 
   const actions = [
     { label: "📎 Thêm conversation này vào Issue Tracking", action: () => addIssue({ sourceLink: sourceUrl, title: data.summary.slice(0, 80) }) },
@@ -134,7 +185,10 @@ function renderSummary(data, sourceUrl, debugInfo) {
 
   actions.forEach((a) => {
     const b = document.createElement("button");
-    b.innerHTML = `${a.label}<span>›</span>`;
+    b.textContent = a.label;
+    const arrow = document.createElement("span");
+    arrow.textContent = "›";
+    b.appendChild(arrow);
     b.addEventListener("click", a.action);
     actionsEl.appendChild(b);
   });
@@ -160,7 +214,7 @@ async function renderRelatedIssues(tags, summaryText, sourceUrl) {
   if (results.length === 0) return; // không hiện "không tìm thấy gì" — tránh gây rối UI
 
   const trackedIssues = await getIssues();
-  container.innerHTML = "";
+  clearElement(container);
 
   results.forEach((result) => {
     const alreadyTracked = trackedIssues.some((issue) => issue.jiraLink === result.url);
@@ -168,7 +222,12 @@ async function renderRelatedIssues(tags, summaryText, sourceUrl) {
 
     const row = document.createElement("div");
     row.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:6px; font-size:12px; padding:4px 0; border-bottom:1px solid var(--border);";
-    row.innerHTML = `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">[${result.statusName || "?"}] <a href="${result.url}" target="_blank">${result.key}</a> — ${shortTitle}</span>`;
+    const description = document.createElement("span");
+    description.style.cssText = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap;";
+    description.append(`[${cleanText(result.statusName || "?", 100)}] `);
+    description.appendChild(createExternalLink(cleanText(result.key, 64), result.url));
+    description.append(` — ${cleanText(shortTitle, 80)}`);
+    row.appendChild(description);
 
     if (alreadyTracked) {
       const span = document.createElement("span");
@@ -200,8 +259,8 @@ let lastSummaryData = null;
 
 async function draftReply(data, btn) {
   lastSummaryData = data;
-  const originalHtml = btn?.innerHTML;
-  if (btn) { btn.disabled = true; btn.innerHTML = "Đang soạn gợi ý..."; }
+  const originalText = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = "Đang soạn gợi ý..."; }
 
   try {
     const response = await chrome.runtime.sendMessage({ type: "DRAFT_REPLY", payload: data });
@@ -218,7 +277,7 @@ async function draftReply(data, btn) {
     section.scrollIntoView({ behavior: "smooth", block: "nearest" });
     textarea.focus();
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = originalHtml; }
+    if (btn) { btn.disabled = false; btn.textContent = originalText; }
   }
 }
 
@@ -326,15 +385,23 @@ document.getElementById("keywordSearchInput").addEventListener("keydown", (e) =>
 function renderJiraSearchResults(results) {
   const section = document.getElementById("jiraSearchSection");
   const container = document.getElementById("jiraSearchContainer");
-  container.innerHTML = "";
+  clearElement(container);
 
   if (results.length === 0) {
-    container.innerHTML = `<div class="empty">Không tìm thấy issue nào.</div>`;
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "Không tìm thấy issue nào.";
+    container.appendChild(empty);
   } else {
     results.forEach((result) => {
       const row = document.createElement("div");
       row.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:6px; padding:4px 0; border-bottom:1px solid var(--border);";
-      row.innerHTML = `<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">[${result.statusName || "?"}] <a href="${result.url}" target="_blank">${result.key}</a> — ${result.title}</span>`;
+      const description = document.createElement("span");
+      description.style.cssText = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap;";
+      description.append(`[${cleanText(result.statusName || "?", 100)}] `);
+      description.appendChild(createExternalLink(cleanText(result.key, 64), result.url));
+      description.append(` — ${cleanText(result.title, 500)}`);
+      row.appendChild(description);
 
       const addBtn = document.createElement("button");
       addBtn.className = "secondary";
@@ -403,6 +470,14 @@ document.getElementById("manualSaveBtn").addEventListener("click", async () => {
     alert('Đã phát hiện 2 link bị nhập ngược ô ("Link Crisp" đang chứa link Jira và ngược lại) — tôi tự hoán đổi lại cho đúng trước khi lưu.');
   }
 
+  try {
+    if (sourceLink) sourceLink = normalizeCrispUrl(sourceLink);
+    if (jiraLink) jiraLink = await normalizeConfiguredJiraLink(jiraLink);
+  } catch (error) {
+    alert(safeErrorMessage(error));
+    return;
+  }
+
   const btn = document.getElementById("manualSaveBtn");
   const originalLabel = btn.textContent;
   btn.disabled = true;
@@ -438,8 +513,8 @@ async function resolveIssueTitle({ sourceLink, jiraLink }) {
 
   if (sourceLink) {
     try {
-      const matchingTabs = await chrome.tabs.query({ url: sourceLink });
-      if (matchingTabs.length > 0 && matchingTabs[0].title) return { title: matchingTabs[0].title, error: null };
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (activeTab?.url === sourceLink && activeTab.title) return { title: cleanText(activeTab.title, 500), error: null };
     } catch (e) {
       /* ignore, dùng fallback bên dưới */
     }
@@ -482,10 +557,10 @@ async function addIssue(partial) {
   const issues = await getIssues();
   issues.unshift({
     id: crypto.randomUUID(),
-    title: partial.title || "(chưa có tiêu đề)",
-    sourceLink: partial.sourceLink || "",
-    jiraLink: partial.jiraLink || "",
-    slackLink: partial.slackLink || "",
+    title: cleanText(partial.title, 500) || "(chưa có tiêu đề)",
+    sourceLink: cleanText(partial.sourceLink, 2048),
+    jiraLink: cleanText(partial.jiraLink, 2048),
+    slackLink: cleanText(partial.slackLink, 2048),
     status: partial.status || "todo", // todo | inprogress | done
     reminderSent: false,
     reportedToCustomer: false,
@@ -522,49 +597,86 @@ function buildIssueCard(issue) {
   card.className = "issue-card" + (issue.priority ? " issue-card-priority" : "");
 
   const statusClass = { todo: "status-todo", inprogress: "status-inprogress", done: "status-done" }[issue.status] || "status-todo";
-  // Ưu tiên hiển thị TÊN THẬT của status trên Jira (VD: "Passed", "QA Verified")
-  // thay vì chỉ 3 nhãn cố định, để agent thấy đúng trạng thái thực tế.
-  const statusLabel = issue.statusName || { todo: "To Do", inprogress: "In Progress", done: "Done" }[issue.status] || issue.status;
+  const statusLabel = cleanText(issue.statusName || { todo: "To Do", inprogress: "In Progress", done: "Done" }[issue.status] || issue.status, 100);
   const ageDays = issueAgeDays(issue);
 
-  card.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:start;">
-      <strong>${issue.title}</strong>
-      <span style="display:flex; align-items:center; gap:4px;">
-        <span class="status-badge ${statusClass}">${statusLabel}</span>
-        <label style="display:flex; align-items:center; gap:2px; font-size:11px; cursor:pointer;" title="Đánh dấu ưu tiên">
-          <input type="checkbox" class="priority-checkbox" data-id="${issue.id}" ${issue.priority ? "checked" : ""} /> ⭐ Ưu tiên
-        </label>
-        ${issue.jiraLink ? `<button class="secondary resync-issue" data-id="${issue.id}" title="Đồng bộ lại tiêu đề/status từ Jira" style="padding:2px 6px; font-size:11px;">🔄</button>` : ""}
-      </span>
-    </div>
-    <div class="meta">
-      ${issue.sourceLink
-        ? `<a href="${issue.sourceLink}" target="_blank">Nguồn ↗</a> <button class="secondary edit-source" data-id="${issue.id}" style="padding:1px 6px; font-size:11px;">✏️</button>`
-        : `<button class="secondary edit-source" data-id="${issue.id}" style="padding:1px 6px; font-size:11px;">+ Thêm link Crisp</button>`}
-      ${issue.jiraLink
-        ? ` · <a href="${issue.jiraLink}" target="_blank">Jira ↗</a> <button class="secondary edit-jira" data-id="${issue.id}" style="padding:1px 6px; font-size:11px;">✏️</button>`
-        : ` · <button class="secondary edit-jira" data-id="${issue.id}" style="padding:1px 6px; font-size:11px;">+ Link Jira</button>`}
-      ${issue.slackLink ? ` · <a href="${issue.slackLink}" target="_blank">Slack ↗</a>` : ""}
-      · <button class="secondary edit-title" data-id="${issue.id}" style="padding:1px 6px; font-size:11px;">✏️ Sửa tiêu đề</button>
-    </div>
-    ${ageDays !== null ? `<div class="issue-age" style="color:var(--muted); font-size:11px; margin-top:2px;">🕐 Đã mở ${ageDays} ngày</div>` : ""}
-    ${issue.jiraSyncError ? `
-      <div style="font-size:11px; color:var(--danger); margin-top:4px; word-break:break-word;">
-        ⚠️ Lỗi đồng bộ Jira: ${issue.jiraSyncError}
-      </div>` : ""}
-    ${issue.status === "done" && !issue.reportedToCustomer ? `
-      <div class="reminder-banner">
-        <span>✅ Jira đã ${issue.statusName || "Done"} — đã báo khách chưa?</span>
-      </div>` : ""}
-    <div style="margin-top:6px; display:flex; justify-content:space-between; align-items:center;">
-      <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
-        <input type="checkbox" class="mark-reported-checkbox" data-id="${issue.id}" ${issue.reportedToCustomer ? "checked" : ""} />
-        Đã báo khách
-      </label>
-      <button class="secondary remove-issue" data-id="${issue.id}">Xoá</button>
-    </div>
-  `;
+  const header = document.createElement("div");
+  header.style.cssText = "display:flex; justify-content:space-between; align-items:start; gap:8px;";
+  const title = document.createElement("strong");
+  title.textContent = cleanText(issue.title, 500);
+  const controls = document.createElement("span");
+  controls.style.cssText = "display:flex; align-items:center; gap:4px;";
+  const badge = document.createElement("span");
+  badge.className = `status-badge ${statusClass}`;
+  badge.textContent = statusLabel;
+  controls.appendChild(badge);
+
+  const priorityLabel = document.createElement("label");
+  priorityLabel.style.cssText = "display:flex; align-items:center; gap:2px; font-size:11px; cursor:pointer;";
+  priorityLabel.title = "Đánh dấu ưu tiên";
+  const priorityCheckbox = document.createElement("input");
+  priorityCheckbox.type = "checkbox";
+  priorityCheckbox.className = "priority-checkbox";
+  priorityCheckbox.dataset.id = issue.id;
+  priorityCheckbox.checked = Boolean(issue.priority);
+  priorityLabel.append(priorityCheckbox, " ⭐ Ưu tiên");
+  controls.appendChild(priorityLabel);
+  if (issue.jiraLink) {
+    const resync = createSmallButton("🔄", "resync-issue", issue.id);
+    resync.title = "Đồng bộ lại tiêu đề/status từ Jira";
+    controls.appendChild(resync);
+  }
+  header.append(title, controls);
+  card.appendChild(header);
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  if (issue.sourceLink) {
+    meta.append(createExternalLink("Nguồn ↗", issue.sourceLink), " ", createSmallButton("✏️", "edit-source", issue.id));
+  } else {
+    meta.appendChild(createSmallButton("+ Thêm link Crisp", "edit-source", issue.id));
+  }
+  meta.append(" · ");
+  if (issue.jiraLink) {
+    meta.append(createExternalLink("Jira ↗", issue.jiraLink), " ", createSmallButton("✏️", "edit-jira", issue.id));
+  } else {
+    meta.appendChild(createSmallButton("+ Link Jira", "edit-jira", issue.id));
+  }
+  meta.append(" · ", createSmallButton("✏️ Sửa tiêu đề", "edit-title", issue.id));
+  card.appendChild(meta);
+
+  if (ageDays !== null && Number.isFinite(ageDays)) {
+    const age = document.createElement("div");
+    age.className = "issue-age";
+    age.style.cssText = "color:var(--muted); font-size:11px; margin-top:2px;";
+    age.textContent = `🕐 Đã mở ${Math.max(0, ageDays)} ngày`;
+    card.appendChild(age);
+  }
+  if (issue.jiraSyncError) {
+    const error = document.createElement("div");
+    error.style.cssText = "font-size:11px; color:var(--danger); margin-top:4px; word-break:break-word;";
+    error.textContent = `⚠️ Lỗi đồng bộ Jira: ${cleanText(issue.jiraSyncError, 500)}`;
+    card.appendChild(error);
+  }
+  if (issue.status === "done" && !issue.reportedToCustomer) {
+    const reminder = document.createElement("div");
+    reminder.className = "reminder-banner";
+    reminder.textContent = `✅ Jira đã ${statusLabel || "Done"} — đã báo khách chưa?`;
+    card.appendChild(reminder);
+  }
+
+  const footer = document.createElement("div");
+  footer.style.cssText = "margin-top:6px; display:flex; justify-content:space-between; align-items:center;";
+  const reportedLabel = document.createElement("label");
+  reportedLabel.style.cssText = "display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;";
+  const reportedCheckbox = document.createElement("input");
+  reportedCheckbox.type = "checkbox";
+  reportedCheckbox.className = "mark-reported-checkbox";
+  reportedCheckbox.dataset.id = issue.id;
+  reportedCheckbox.checked = Boolean(issue.reportedToCustomer);
+  reportedLabel.append(reportedCheckbox, " Đã báo khách");
+  footer.append(reportedLabel, createSmallButton("Xoá", "remove-issue", issue.id));
+  card.appendChild(footer);
   return card;
 }
 
@@ -574,18 +686,25 @@ function buildIssueCard(issue) {
 async function renderIssuesList() {
   const issues = await getIssues();
   const list = document.getElementById("issuesList");
-  list.innerHTML = "";
+  clearElement(list);
 
   if (issues.length === 0) {
-    list.innerHTML = `<div class="empty">Chưa có issue nào được theo dõi.</div>`;
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "Chưa có issue nào được theo dõi.";
+    list.appendChild(empty);
     return;
   }
 
-  // Tách riêng issue ưu tiên thành section trên cùng, thay vì chỉ sort + border
-  // trái như trước — dễ nhận ra hơn khi danh sách dài. Giữ nguyên thứ tự tương
-  // đối trong từng nhóm (không sort lại theo tiêu chí khác).
-  const priorityIssues = issues.filter((i) => i.priority);
-  const otherIssues = issues.filter((i) => !i.priority);
+  // Issue đã báo khách coi như đã xong việc — đẩy hết xuống cuối vào 1 khu
+  // riêng (thu gọn mặc định) để danh sách chính chỉ còn việc đang cần xử lý.
+  const activeIssues = issues.filter((i) => !i.reportedToCustomer);
+  const reportedIssues = issues.filter((i) => i.reportedToCustomer);
+
+  // Trong nhóm đang xử lý: tách tiếp issue ưu tiên lên trên. Giữ nguyên thứ tự
+  // tương đối trong từng nhóm (không sort lại theo tiêu chí khác).
+  const priorityIssues = activeIssues.filter((i) => i.priority);
+  const otherIssues = activeIssues.filter((i) => !i.priority);
 
   if (priorityIssues.length > 0) {
     const heading = document.createElement("div");
@@ -601,6 +720,17 @@ async function renderIssuesList() {
     heading.style.cssText = `font-size:12px; font-weight:700; color:var(--muted); margin-bottom:6px;${priorityIssues.length > 0 ? " margin-top:12px;" : ""}`;
     list.appendChild(heading);
     otherIssues.forEach((issue) => list.appendChild(buildIssueCard(issue)));
+  }
+
+  if (reportedIssues.length > 0) {
+    const details = document.createElement("details");
+    details.style.cssText = activeIssues.length > 0 ? "margin-top:16px;" : "";
+    const summary = document.createElement("summary");
+    summary.textContent = `✅ Đã báo khách (${reportedIssues.length})`;
+    summary.style.cssText = "font-size:12px; font-weight:700; color:var(--ok); margin-bottom:6px; cursor:pointer;";
+    details.appendChild(summary);
+    reportedIssues.forEach((issue) => details.appendChild(buildIssueCard(issue)));
+    list.appendChild(details);
   }
 
   list.querySelectorAll(".resync-issue").forEach((b) =>
@@ -691,12 +821,12 @@ async function renderIssuesList() {
       if (!target) return;
       const newLink = prompt("Sửa link Crisp:", target.sourceLink || "");
       if (newLink === null) return; // huỷ
-      const trimmed = newLink.trim();
-      if (trimmed && !trimmed.startsWith("http")) {
-        alert("Link phải bắt đầu bằng http:// hoặc https://");
+      try {
+        target.sourceLink = newLink.trim() ? normalizeCrispUrl(newLink) : "";
+      } catch (error) {
+        alert(safeErrorMessage(error));
         return;
       }
-      target.sourceLink = trimmed;
       await saveIssues(issues);
       renderIssuesList();
     })
@@ -713,9 +843,11 @@ async function renderIssuesList() {
       if (!target) return;
       const newLink = prompt("Sửa link Jira:", target.jiraLink || "");
       if (newLink === null) return; // huỷ
-      const trimmed = newLink.trim();
-      if (trimmed && !trimmed.startsWith("http")) {
-        alert("Link phải bắt đầu bằng http:// hoặc https://");
+      let trimmed = "";
+      try {
+        trimmed = newLink.trim() ? await normalizeConfiguredJiraLink(newLink) : "";
+      } catch (error) {
+        alert(safeErrorMessage(error));
         return;
       }
       const oldLink = target.jiraLink;
@@ -729,16 +861,14 @@ async function renderIssuesList() {
   );
 }
 
-// Bắn TẤT CẢ request GET_JIRA_STATUS song song (Promise.all) thay vì tuần tự
-// — chỉ gọi khi chuyển sang tab Issue Tracking hoặc bấm "🔄 Đồng bộ tất cả",
-// không gọi ngầm mỗi lần render cục bộ như renderIssuesList().
+// Giới hạn số request Jira đồng thời để giảm nguy cơ rate limit.
 async function syncJiraStatuses() {
   const issues = await getIssues();
-
-  await Promise.all(
-    issues.map(async (issue) => {
-      if (!issue.jiraLink || issue.status === "done") return;
-
+  const pending = issues.filter((issue) => issue.jiraLink);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < pending.length) {
+      const issue = pending[cursor++];
       const res = await chrome.runtime.sendMessage({ type: "GET_JIRA_STATUS", payload: { jiraLink: issue.jiraLink } });
       if (res?.data?.status) {
         issue.status = res.data.status;
@@ -753,8 +883,9 @@ async function syncJiraStatuses() {
       }
       // Chỉ ghi đè khi có giá trị mới — không xoá mốc thời gian cũ nếu lần sync này lỗi.
       if (res?.data?.created) issue.jiraCreatedAt = res.data.created;
-    })
-  );
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, pending.length) }, () => worker()));
 
   await saveIssues(issues);
   await renderIssuesList();
