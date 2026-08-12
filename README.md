@@ -8,7 +8,8 @@
 
 ## Trước khi dùng
 1. Vào **Cài đặt** (nút góc trên side panel) → nhập:
-   - Claude API key
+   - OpenAI API key và API billing riêng (gói ChatGPT không bao gồm API usage)
+   - OpenAI model, mặc định `gpt-5-mini`
    - Jira base URL / email / API token / project key (nếu muốn test tạo issue)
 2. Mở bất kỳ tab nào có nội dung hội thoại support (Crisp, Intercom, Zendesk, hoặc trang bất kỳ) → mở side panel → bấm **Tóm tắt cuộc trò chuyện**
 
@@ -17,8 +18,8 @@
 - Chỉ khi agent bấm nút **"Tóm tắt cuộc trò chuyện"**, `sidepanel.js` mới:
   1. Inject `content.js` vào đúng tab đang active tại thời điểm bấm (`chrome.scripting.executeScript`).
   2. Gọi hàm trích xuất text từ trang đó.
-  3. Gửi text sang `background.js` → gọi Claude API để tóm tắt/chấm priority/gắn tag.
-- Extension xin `host_permissions` cho `http://*/*` và `https://*/*` để `chrome.scripting.executeScript` chạy được trên **mọi tab đang mở tại thời điểm bấm nút**, kể cả khi side panel đã mở từ trước và bạn chuyển sang tab khác.
+  3. Che email/số điện thoại/token theo best-effort rồi gửi text sang `background.js` → gọi OpenAI Responses API để tóm tắt/chấm priority/gắn tag.
+- Extension chỉ cho phép đọc tab HTTPS thuộc `crisp.chat` sau khi agent bấm nút. Jira tenant được xin quyền tùy chọn lúc lưu cấu hình; OpenAI API là host permission cố định duy nhất.
   - *Lý do không dùng riêng `activeTab`*: quyền `activeTab` chỉ cấp cho đúng tab đang active **tại thời điểm bạn mở side panel** (click icon extension) — nếu sau đó bạn chuyển tab rồi mới bấm Tóm tắt, tab mới sẽ KHÔNG có quyền và bị lỗi `Cannot access contents of the page`. Vì side panel của bạn cần hoạt động trên tab bất kỳ đang xem, phải xin host permission rộng thay vì phụ thuộc gesture của `activeTab`.
 
 ### Trích xuất nội dung (content.js) — tránh đọc lẫn nhiều hội thoại
@@ -44,7 +45,7 @@ Nếu khung chat của tool support (Crisp/Intercom/Zendesk...) nằm trong 1 `<
 Sau khi bấm Tóm tắt, side panel hiển thị 1 dòng nhỏ phía trên kết quả: tiêu đề trang, có đọc từ iframe hay không, số dòng đọc được, và phương pháp trích xuất đã dùng — giúp bạn xác nhận đúng conversation đã được đọc (VD: đúng "Sabine Schmid" chứ không phải hội thoại khác) trước khi tin tưởng bản tóm tắt.
 
 ### Đa ngôn ngữ
-Nội dung hội thoại gốc có thể ở bất kỳ ngôn ngữ nào (Đức, Anh, Việt...) — Claude tự đọc hiểu đúng ngôn ngữ gốc và tóm tắt theo ngôn ngữ bạn chọn ở dropdown "Tóm tắt". Vấn đề trước đó là do content bị đọc sai/thiếu (do lỗi iframe ở trên) chứ không phải do rào cản ngôn ngữ.
+Nội dung hội thoại gốc có thể ở nhiều ngôn ngữ — OpenAI model đọc nội dung và tóm tắt theo ngôn ngữ bạn chọn ở dropdown "Tóm tắt". Kết quả AI luôn phải được agent kiểm tra lại.
 
 ### Gợi ý trả lời khách — review/edit trước khi copy
 Trước đây bấm "Gợi ý trả lời khách" sẽ tự copy thẳng vào clipboard. Giờ nội dung gợi ý hiện ra trong 1 khung textarea ngay trong panel để agent **xem lại và chỉnh sửa nếu cần**, sau đó mới bấm nút "📋 Copy nội dung" để copy (copy đúng bản đã chỉnh sửa, không phải bản gốc AI sinh ra).
@@ -67,7 +68,7 @@ Bản trước khi gọi Jira API thất bại (sai cấu hình, sai định d�
 Nếu vẫn thấy dòng lỗi đỏ sau khi bấm 🔄, đọc đúng nội dung lỗi đó — thường là do chưa điền đủ Jira Base URL / Email / API Token ở trang **Cài đặt**, hoặc link Jira sai định dạng (phải đúng dạng `.../browse/PROJ-123`).
 
 ### Lưu bền vững Issue Tracking (không mất khi tắt trình duyệt)
-Bản trước dùng `chrome.storage.sync` để lưu danh sách issue — loại storage này có giới hạn rất nhỏ (~8KB cho mỗi item, tất cả issue lại đang lưu chung 1 key), nên khi danh sách issue lớn dần rất dễ **âm thầm lưu thất bại** mà không báo lỗi gì, gây mất dữ liệu. Bản này chuyển sang `chrome.storage.local` (quota mặc định 5MB, không giới hạn theo từng item, đã bật thêm quyền `unlimitedStorage` để an toàn hơn nữa) — dữ liệu vẫn **bền vững qua các lần tắt/mở trình duyệt hoặc restart máy**, chỉ khác là không đồng bộ giữa nhiều máy khác nhau (Google account) như sync — điều mà vốn dĩ cũng không đáng tin cậy do giới hạn dung lượng ở trên. Có migration tự động: nếu bạn đã có issue lưu từ bản cũ (storage.sync), lần đầu mở bản mới sẽ tự chuyển dữ liệu đó sang storage.local, không bị mất.
+Bản trước dùng `chrome.storage.sync` để lưu danh sách issue và credential. Bản này chuyển sang `chrome.storage.local`: dữ liệu vẫn bền vững qua các lần restart nhưng không đồng bộ qua Google account. Migration tự chuyển Jira config/issue cũ sang local và xoá Claude key cũ khỏi Chrome Sync. `storage.local` vẫn không phải secret vault.
 ### Tự phát hiện & sửa khi 2 link bị nhập ngược ô
 Vì 2 ô "Link Crisp" và "Link Jira" ở form thêm thủ công trông giống nhau, rất dễ dán nhầm ngược (VD: dán link `atlassian.net/browse/...` vào ô Crisp, dán link `crisp.chat` vào ô Jira) — dẫn tới lỗi khó hiểu "Link Jira không hợp lệ" dù link đó thực ra hợp lệ, chỉ là nằm sai ô. Bản này tự nhận diện theo domain (`atlassian.net/browse/` = Jira, `crisp.chat` = Crisp) và tự hoán đổi lại trước khi lưu, kèm thông báo cho agent biết đã tự sửa. Nút 🔄 trên issue cũng tự kiểm tra và sửa lại nếu issue đã lỡ được lưu bị ngược từ trước (không cần xoá tạo lại).
 
@@ -84,9 +85,10 @@ Regex `/resolved/i` trước đó khớp luôn cả chữ **"Unresolved"** (badg
 Nếu ô soạn tin là rich-text editor (contenteditable) hiển thị placeholder bằng CSS thay vì thuộc tính `placeholder` thật, chiến lược dò theo input sẽ không tìm thấy (rơi về `column-by-ratio`, kém chính xác hơn). Bản này thêm chiến lược dự phòng: tìm toolbar phía trên ô soạn tin dựa theo các nhãn TEXT thật trong DOM ("Reply", "Edit", "Note", "Shortcuts", "Knowledge Base" — đúng như toolbar của Crisp), dùng vị trí toolbar đó làm mốc cột chat khi không tìm được qua placeholder.
 
 ## ⚠️ Việc CẦN làm trước khi dùng thật với team (production)
-- Selector trong `content.js` là best-effort — nếu Crisp đổi UI, nên thay bằng gọi thẳng Crisp API (`list_website_conversation_messages`) qua OAuth thay vì scrape DOM, sẽ bền hơn.
-- `background.js` gọi thẳng Claude API kèm header `anthropic-dangerous-direct-browser-access: true` — header này Anthropic yêu cầu chính vì gọi trực tiếp từ browser là **không an toàn cho production**: bất kỳ ai mở DevTools trên máy đang cài extension đều có thể xem được API key trong request. Chỉ nên chấp nhận rủi ro này khi test nội bộ nhỏ; khi triển khai thật cho cả team, bắt buộc chuyển sang gọi qua backend proxy (xem `PROPOSAL.md` mục 5) để giấu key.
-- Đừng để agent tự nhập Claude/Jira API key cá nhân ở bản chính thức — dựng backend proxy dùng chung để bảo mật + đồng bộ issue-tracking giữa nhiều agent (hiện bản này dùng `chrome.storage.sync`, chỉ đồng bộ được giữa các máy đăng nhập CÙNG 1 tài khoản Chrome, KHÔNG chia sẻ được giữa các agent khác nhau).
+- Selector trong `content.js` là best-effort. Bản 0.14.0 không còn fallback đọc toàn bộ body; nếu không nhận diện chắc chắn vùng hội thoại, extension sẽ từ chối gửi. Crisp API/OAuth vẫn là hướng bền vững hơn.
+- `background.js` gọi thẳng OpenAI API bằng key lưu trong browser profile. Đây **không an toàn cho production**; chỉ chấp nhận cho thử nghiệm nội bộ có hạn mức thấp. Production bắt buộc dùng backend proxy có auth.
+- Đừng dùng chung OpenAI/Jira key cá nhân cho cả team. `chrome.storage.local` không chia sẻ issue giữa agent và không bảo vệ credential khỏi profile/extension bị xâm phạm.
+- PII redaction chỉ là best-effort, không thay thế quy trình privacy, vendor approval và data retention của công ty. Xem `PRIVACY.md` và `SECURITY.md`.
 - Slack integration (đọc/ghi status) chưa code trong bản này — cần Slack app + OAuth scope `channels:history`, thêm handler tương tự `getJiraStatus` trong `background.js`.
 
 ## Cấu trúc file
@@ -94,7 +96,8 @@ Nếu ô soạn tin là rich-text editor (contenteditable) hiển thị placehol
 manifest.json      - khai báo permissions, side panel, content script
 sidepanel.html/js   - UI chính (tab Tóm tắt + tab Issue Tracking)
 content.js          - trích xuất tin nhắn từ DOM Crisp
-background.js       - gọi Claude API + Jira API (service worker)
+background.js       - gọi OpenAI Responses API + Jira API (service worker)
+common.js           - validation URL, AI schema và PII redaction dùng chung
 options.html/js      - trang cấu hình API key
 PROPOSAL.md          - đề xuất sản phẩm & roadmap đầy đủ
 ```

@@ -290,8 +290,9 @@ window.__extractSupportConversation = async function () {
           lines = platformResult.lines;
           method = "top-frame:selector:" + platformResult.platform;
         } else {
-          lines = extractFullFrameLines();
-          method = "top-frame:fallback-full-body";
+          // Không gửi toàn bộ body vì có thể chứa sidebar, PII hoặc hội thoại khác.
+          lines = [];
+          method = "top-frame:no-trusted-conversation-region";
         }
       }
     } else {
@@ -308,8 +309,9 @@ window.__extractSupportConversation = async function () {
         lines = platformResult.lines;
         method = "iframe:selector:" + platformResult.platform;
       } else {
-        lines = extractFullFrameLines();
-        method = "iframe:full-body";
+        // Không fallback sang toàn bộ iframe nếu chưa nhận diện được message selector.
+        lines = [];
+        method = "iframe:no-trusted-message-selector";
       }
     }
 
