@@ -1,5 +1,13 @@
 # Support Assistant Extension — MVP scaffold
 
+## Giao diện 0.15.0
+
+- Side panel responsive, không còn cố định chiều rộng 380px.
+- Hai khu vực Tóm tắt và Issue Tracking có phân cấp thao tác rõ ràng hơn.
+- Issue card tách title, Jira status, liên kết, priority, trạng thái báo khách và lỗi đồng bộ.
+- Settings tách riêng Security, OpenAI và Jira, có nút hiện/ẩn credential cục bộ.
+- Toàn bộ storage keys, issue fields và API/message contracts được giữ nguyên; không cần migrate dữ liệu.
+
 ## Cài vào Chrome/Edge để chạy thử
 1. Mở `chrome://extensions` (hoặc `edge://extensions`)
 2. Bật "Developer mode"

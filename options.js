@@ -19,13 +19,30 @@ const fields = ["openaiApiKey", "openaiModel", "jiraBaseUrl", "jiraEmail", "jira
 function showMessage(message, isError = false) {
   const element = document.getElementById("savedMsg");
   element.textContent = message;
-  element.style.color = isError ? "#dc2626" : "#16a34a";
+  element.className = `saved${isError ? " is-error" : ""}`;
   element.style.display = "block";
 }
 
+function setBusy(button, busy) {
+  button.disabled = busy;
+  button.setAttribute("aria-busy", String(busy));
+}
+
+document.querySelectorAll(".secret-toggle").forEach((button) => {
+  button.addEventListener("click", () => {
+    const input = document.getElementById(button.dataset.target);
+    const reveal = input.type === "password";
+    input.type = reveal ? "text" : "password";
+    button.textContent = reveal ? "Ẩn" : "Hiện";
+    button.setAttribute("aria-label", `${reveal ? "Ẩn" : "Hiện"} ${input.id === "openaiApiKey" ? "API Key" : "Jira API Token"}`);
+  });
+});
+
 document.getElementById("saveBtn").addEventListener("click", async () => {
   const button = document.getElementById("saveBtn");
-  button.disabled = true;
+  const originalLabel = button.textContent;
+  setBusy(button, true);
+  button.textContent = "Đang lưu...";
 
   try {
     const jiraBaseUrl = normalizeJiraBaseUrl(document.getElementById("jiraBaseUrl").value);
@@ -47,10 +64,15 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
     await chrome.storage.local.set({ openaiApiKey, openaiModel, jiraBaseUrl, jiraEmail, jiraApiToken, jiraProjectKey });
     document.getElementById("jiraBaseUrl").value = jiraBaseUrl;
     document.getElementById("jiraProjectKey").value = jiraProjectKey;
+    document.querySelectorAll(".secret-toggle").forEach((toggle) => {
+      document.getElementById(toggle.dataset.target).type = "password";
+      toggle.textContent = "Hiện";
+    });
     showMessage("Đã lưu an toàn hơn trong storage.local. Lưu ý: đây vẫn không phải secret vault.");
   } catch (error) {
     showMessage(safeErrorMessage(error), true);
   } finally {
-    button.disabled = false;
+    setBusy(button, false);
+    button.textContent = originalLabel;
   }
 });

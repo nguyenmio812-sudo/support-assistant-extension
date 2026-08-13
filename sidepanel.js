@@ -32,11 +32,22 @@ function createExternalLink(label, href) {
 function createSmallButton(label, className, id) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = `secondary ${className}`;
+  button.className = `ghost compact-action ${className}`;
   button.dataset.id = id;
   button.textContent = label;
-  button.style.cssText = "padding:1px 6px; font-size:11px;";
   return button;
+}
+
+function showNotice(scope, message = "", type = "error") {
+  const element = document.getElementById(`${scope}Notice`);
+  if (!element) return;
+  element.textContent = cleanText(message, 600);
+  element.className = `notice${message ? ` is-${type}` : ""}`;
+}
+
+function setBusy(button, busy) {
+  button.disabled = busy;
+  button.setAttribute("aria-busy", String(busy));
 }
 
 async function normalizeConfiguredJiraLink(value) {
@@ -46,11 +57,31 @@ async function normalizeConfiguredJiraLink(value) {
 
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
-    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+    document.querySelectorAll(".tab-btn").forEach((b) => {
+      b.classList.remove("active");
+      b.setAttribute("aria-selected", "false");
+    });
+    document.querySelectorAll(".panel").forEach((p) => {
+      p.classList.remove("active");
+      p.setAttribute("aria-hidden", "true");
+    });
     btn.classList.add("active");
-    document.getElementById(`panel-${btn.dataset.tab}`).classList.add("active");
+    btn.setAttribute("aria-selected", "true");
+    const panel = document.getElementById(`panel-${btn.dataset.tab}`);
+    panel.classList.add("active");
+    panel.setAttribute("aria-hidden", "false");
     if (btn.dataset.tab === "issues") syncJiraStatuses();
+  });
+
+  btn.addEventListener("keydown", (event) => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = [...document.querySelectorAll(".tab-btn")];
+    const current = tabs.indexOf(btn);
+    const direction = event.key === 'ArrowRight' ? 1 : -1;
+    const next = tabs[(current + direction + tabs.length) % tabs.length];
+    next.focus();
+    next.click();
   });
 });
 
@@ -63,13 +94,14 @@ document.getElementById("openOptions").addEventListener("click", () => {
 document.getElementById("summarizeBtn").addEventListener("click", async () => {
   const btn = document.getElementById("summarizeBtn");
   const originalLabel = btn.textContent;
-  btn.disabled = true;
+  setBusy(btn, true);
+  showNotice("summary");
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (!tab || !tab.id) {
-      alert("Không tìm thấy tab đang mở.");
+      showNotice("summary", "Không tìm thấy tab đang mở.");
       return;
     }
 
@@ -77,7 +109,7 @@ document.getElementById("summarizeBtn").addEventListener("click", async () => {
     let activeUrl;
     try { activeUrl = new URL(tab.url); } catch { activeUrl = null; }
     if (!activeUrl || activeUrl.protocol !== "https:" || !/(^|\.)crisp\.chat$/i.test(activeUrl.hostname)) {
-      alert("Vì lý do bảo mật, extension chỉ đọc hội thoại trên domain HTTPS thuộc crisp.chat.");
+      showNotice("summary", "Vì lý do bảo mật, extension chỉ đọc hội thoại trên domain HTTPS thuộc crisp.chat.");
       return;
     }
 
@@ -103,7 +135,7 @@ document.getElementById("summarizeBtn").addEventListener("click", async () => {
       .filter((r) => r && !r.error);
 
     if (validResults.length === 0) {
-      alert("Không đọc được nội dung hội thoại ở bất kỳ frame nào trong tab này. Hãy chắc chắn trang đã tải xong nội dung hội thoại rồi thử lại.");
+      showNotice("summary", "Không đọc được nội dung hội thoại. Hãy chắc chắn trang Crisp đã tải xong rồi thử lại.");
       return;
     }
 
@@ -123,15 +155,15 @@ document.getElementById("summarizeBtn").addEventListener("click", async () => {
     });
 
     if (response.error) {
-      alert("Lỗi: " + response.error);
+      showNotice("summary", response.error);
       return;
     }
 
     renderSummary(response.data, tab.url, conversation);
   } catch (err) {
-    alert("Có lỗi xảy ra: " + String(err));
+    showNotice("summary", safeErrorMessage(err));
   } finally {
-    btn.disabled = false;
+    setBusy(btn, false);
     btn.textContent = originalLabel;
   }
 });
@@ -154,7 +186,7 @@ function renderSummary(data, sourceUrl, debugInfo) {
     const scrollNote = debugInfo.scrollInfo?.scrolled
       ? ` · đã cuộn ${debugInfo.scrollInfo.iterations} lần (${reasonMap[debugInfo.scrollInfo.stoppedReason] || debugInfo.scrollInfo.stoppedReason})`
       : "";
-    debugEl.textContent = `📍 Đã đọc: "${debugInfo.title || sourceUrl}"${frameNote} · ${debugInfo.messageCount} dòng${scrollNote} · ${debugInfo.method}`;
+    debugEl.textContent = `Nguồn đã đọc: "${debugInfo.title || sourceUrl}"${frameNote} · ${debugInfo.messageCount} dòng${scrollNote} · ${debugInfo.method}`;
     debugEl.title = debugInfo.url;
   }
 
@@ -179,8 +211,8 @@ function renderSummary(data, sourceUrl, debugInfo) {
   clearElement(actionsEl);
 
   const actions = [
-    { label: "📎 Thêm conversation này vào Issue Tracking", action: () => addIssue({ sourceLink: sourceUrl, title: data.summary.slice(0, 80) }) },
-    { label: `✉️ Gợi ý trả lời khách (${data.replyLang || "vi"})`, action: (evt) => draftReply(data, evt.currentTarget) },
+    { label: "Thêm conversation vào Issue Tracking", action: () => addIssue({ sourceLink: sourceUrl, title: data.summary.slice(0, 80) }) },
+    { label: `Soạn trả lời khách (${data.replyLang || "vi"})`, action: (evt) => draftReply(data, evt.currentTarget) },
   ];
 
   actions.forEach((a) => {
@@ -221,28 +253,27 @@ async function renderRelatedIssues(tags, summaryText, sourceUrl) {
     const shortTitle = result.title.length > 50 ? result.title.slice(0, 50) + "…" : result.title;
 
     const row = document.createElement("div");
-    row.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:6px; font-size:12px; padding:4px 0; border-bottom:1px solid var(--border);";
+    row.className = "jira-result-row";
     const description = document.createElement("span");
-    description.style.cssText = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap;";
+    description.className = "jira-result-description";
     description.append(`[${cleanText(result.statusName || "?", 100)}] `);
     description.appendChild(createExternalLink(cleanText(result.key, 64), result.url));
-    description.append(` — ${cleanText(shortTitle, 80)}`);
+    description.append(`: ${cleanText(shortTitle, 80)}`);
     row.appendChild(description);
 
     if (alreadyTracked) {
       const span = document.createElement("span");
-      span.style.cssText = "color:var(--muted); font-size:11px; white-space:nowrap;";
-      span.textContent = "✓ Đã theo dõi";
+      span.className = "provider-badge";
+      span.textContent = "Đã theo dõi";
       row.appendChild(span);
     } else {
       const btn = document.createElement("button");
-      btn.className = "secondary";
-      btn.style.cssText = "padding:1px 6px; font-size:11px; white-space:nowrap;";
-      btn.textContent = "+ Thêm";
+      btn.className = "secondary compact-action";
+      btn.textContent = "Thêm";
       btn.addEventListener("click", async () => {
-        btn.disabled = true;
+        setBusy(btn, true);
         await addIssue({ title: result.title, jiraLink: result.url, sourceLink: sourceUrl });
-        btn.textContent = "✓ Đã thêm";
+        btn.textContent = "Đã thêm";
       });
       row.appendChild(btn);
     }
@@ -260,12 +291,12 @@ let lastSummaryData = null;
 async function draftReply(data, btn) {
   lastSummaryData = data;
   const originalText = btn?.textContent;
-  if (btn) { btn.disabled = true; btn.textContent = "Đang soạn gợi ý..."; }
+  if (btn) { setBusy(btn, true); btn.textContent = "Đang soạn gợi ý..."; }
 
   try {
     const response = await chrome.runtime.sendMessage({ type: "DRAFT_REPLY", payload: data });
     if (response.error) {
-      alert(response.error);
+      showNotice("summary", response.error);
       return;
     }
 
@@ -277,7 +308,7 @@ async function draftReply(data, btn) {
     section.scrollIntoView({ behavior: "smooth", block: "nearest" });
     textarea.focus();
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    if (btn) { setBusy(btn, false); btn.textContent = originalText; }
   }
 }
 
@@ -286,7 +317,8 @@ document.getElementById("copyReplyBtn").addEventListener("click", () => {
   navigator.clipboard.writeText(textarea.value);
   const btn = document.getElementById("copyReplyBtn");
   const original = btn.textContent;
-  btn.textContent = "✓ Đã copy!";
+  btn.textContent = "Đã copy";
+  showNotice("summary", "Đã copy bản nháp vào clipboard.", "success");
   setTimeout(() => { btn.textContent = original; }, 1500);
 });
 
@@ -296,7 +328,7 @@ document.getElementById("regenerateReplyBtn").addEventListener("click", async (e
   const hintValue = document.getElementById("replyHintInput").value.trim();
 
   const original = btn.textContent;
-  btn.disabled = true;
+  setBusy(btn, true);
   btn.textContent = "Đang tạo lại...";
 
   try {
@@ -305,13 +337,13 @@ document.getElementById("regenerateReplyBtn").addEventListener("click", async (e
       payload: { ...lastSummaryData, agentHint: hintValue },
     });
     if (response.error) {
-      alert(response.error);
+      showNotice("summary", response.error);
       return;
     }
     // Không xoá #replyHintInput — agent có thể bấm lại nhiều lần với ý bổ sung khác.
     document.getElementById("replyDraftText").value = response.data.reply;
   } finally {
-    btn.disabled = false;
+    setBusy(btn, false);
     btn.textContent = original;
   }
 });
@@ -322,17 +354,18 @@ document.getElementById("addCurrentBtn").addEventListener("click", async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   await addIssue({ sourceLink: tab.url, title: "(chưa có tiêu đề — sửa thủ công)" });
   renderIssuesList();
+  showNotice("issues", "Đã thêm tab hiện tại vào danh sách theo dõi.", "success");
 });
 
 document.getElementById("syncAllBtn").addEventListener("click", async (e) => {
   const btn = e.currentTarget;
   const original = btn.textContent;
-  btn.disabled = true;
+  setBusy(btn, true);
   btn.textContent = "Đang đồng bộ...";
   try {
     await syncJiraStatuses();
   } finally {
-    btn.disabled = false;
+    setBusy(btn, false);
     btn.textContent = original;
   }
 });
@@ -340,16 +373,16 @@ document.getElementById("syncAllBtn").addEventListener("click", async (e) => {
 document.getElementById("myUntrackedIssuesBtn").addEventListener("click", async (e) => {
   const btn = e.currentTarget;
   const original = btn.textContent;
-  btn.disabled = true;
+  setBusy(btn, true);
   btn.textContent = "Đang tải...";
 
   try {
     const trackedJiraLinks = (await getIssues()).map((i) => i.jiraLink).filter(Boolean);
     const response = await chrome.runtime.sendMessage({ type: "GET_MY_UNTRACKED_ISSUES", payload: { trackedJiraLinks } });
-    if (response?.data?.error) alert(response.data.error);
+    if (response?.data?.error) showNotice("issues", response.data.error);
     renderJiraSearchResults(response?.data?.results || []);
   } finally {
-    btn.disabled = false;
+    setBusy(btn, false);
     btn.textContent = original;
   }
 });
@@ -361,16 +394,16 @@ async function runKeywordSearch() {
 
   const btn = document.getElementById("keywordSearchBtn");
   const original = btn.textContent;
-  btn.disabled = true;
+  setBusy(btn, true);
   btn.textContent = "Đang tìm...";
 
   try {
     const trackedJiraLinks = (await getIssues()).map((i) => i.jiraLink).filter(Boolean);
     const response = await chrome.runtime.sendMessage({ type: "SEARCH_JIRA_BY_KEYWORD", payload: { keyword, trackedJiraLinks } });
-    if (response?.data?.error) alert(response.data.error);
+    if (response?.data?.error) showNotice("issues", response.data.error);
     renderJiraSearchResults(response?.data?.results || []);
   } finally {
-    btn.disabled = false;
+    setBusy(btn, false);
     btn.textContent = original;
   }
 }
@@ -395,22 +428,21 @@ function renderJiraSearchResults(results) {
   } else {
     results.forEach((result) => {
       const row = document.createElement("div");
-      row.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:6px; padding:4px 0; border-bottom:1px solid var(--border);";
+      row.className = "jira-result-row";
       const description = document.createElement("span");
-      description.style.cssText = "overflow:hidden; text-overflow:ellipsis; white-space:nowrap;";
+      description.className = "jira-result-description";
       description.append(`[${cleanText(result.statusName || "?", 100)}] `);
       description.appendChild(createExternalLink(cleanText(result.key, 64), result.url));
-      description.append(` — ${cleanText(result.title, 500)}`);
+      description.append(`: ${cleanText(result.title, 500)}`);
       row.appendChild(description);
 
       const addBtn = document.createElement("button");
-      addBtn.className = "secondary";
-      addBtn.style.cssText = "padding:1px 6px; font-size:11px; white-space:nowrap;";
-      addBtn.textContent = "+ Thêm";
+      addBtn.className = "secondary compact-action";
+      addBtn.textContent = "Thêm";
       addBtn.addEventListener("click", async () => {
-        addBtn.disabled = true;
+        setBusy(addBtn, true);
         await addIssue({ title: result.title, jiraLink: result.url, sourceLink: "" });
-        addBtn.textContent = "✓ Đã thêm";
+        addBtn.textContent = "Đã thêm";
       });
       row.appendChild(addBtn);
       container.appendChild(row);
@@ -455,7 +487,7 @@ document.getElementById("manualSaveBtn").addEventListener("click", async () => {
   let jiraLink = document.getElementById("manualJiraLink").value.trim();
 
   if (!sourceLink && !jiraLink) {
-    alert("Vui lòng nhập ít nhất 1 link (Crisp hoặc Jira).");
+    showNotice("issues", "Vui lòng nhập ít nhất một link Crisp hoặc Jira.");
     return;
   }
 
@@ -467,32 +499,33 @@ document.getElementById("manualSaveBtn").addEventListener("click", async () => {
 
   if (looksLikeJira(sourceLink) && looksLikeCrisp(jiraLink)) {
     [sourceLink, jiraLink] = [jiraLink, sourceLink];
-    alert('Đã phát hiện 2 link bị nhập ngược ô ("Link Crisp" đang chứa link Jira và ngược lại) — tôi tự hoán đổi lại cho đúng trước khi lưu.');
+    showNotice("issues", "Đã phát hiện hai link bị nhập ngược và tự hoán đổi trước khi lưu.", "success");
   }
 
   try {
     if (sourceLink) sourceLink = normalizeCrispUrl(sourceLink);
     if (jiraLink) jiraLink = await normalizeConfiguredJiraLink(jiraLink);
   } catch (error) {
-    alert(safeErrorMessage(error));
+    showNotice("issues", safeErrorMessage(error));
     return;
   }
 
   const btn = document.getElementById("manualSaveBtn");
   const originalLabel = btn.textContent;
-  btn.disabled = true;
+  setBusy(btn, true);
   btn.textContent = "Đang lấy tiêu đề...";
 
   try {
     const { title, error } = await resolveIssueTitle({ sourceLink, jiraLink });
     if (error) {
-      alert("Không tự lấy được tiêu đề: " + error + "\n\nIssue vẫn được lưu — bạn có thể bấm nút 🔄 trên issue để thử đồng bộ lại sau, hoặc kiểm tra cấu hình Jira ở trang Cài đặt.");
+      showNotice("issues", `Không tự lấy được tiêu đề: ${error}. Issue vẫn được lưu và có thể đồng bộ lại sau.`);
     }
     await addIssue({ title, sourceLink, jiraLink });
     document.getElementById("manualCancelBtn").click(); // reset form + ẩn
     renderIssuesList();
+    if (!error) showNotice("issues", "Đã lưu issue vào danh sách theo dõi.", "success");
   } finally {
-    btn.disabled = false;
+    setBusy(btn, false);
     btn.textContent = originalLabel;
   }
 });
@@ -601,28 +634,28 @@ function buildIssueCard(issue) {
   const ageDays = issueAgeDays(issue);
 
   const header = document.createElement("div");
-  header.style.cssText = "display:flex; justify-content:space-between; align-items:start; gap:8px;";
+  header.className = "issue-header";
   const title = document.createElement("strong");
-  title.textContent = cleanText(issue.title, 500);
+  title.className = "issue-title";
+  title.textContent = issue.title === "(chưa có tiêu đề — sửa thủ công)" ? "Chưa có tiêu đề" : cleanText(issue.title, 500);
   const controls = document.createElement("span");
-  controls.style.cssText = "display:flex; align-items:center; gap:4px;";
+  controls.className = "issue-controls";
   const badge = document.createElement("span");
   badge.className = `status-badge ${statusClass}`;
   badge.textContent = statusLabel;
   controls.appendChild(badge);
 
   const priorityLabel = document.createElement("label");
-  priorityLabel.style.cssText = "display:flex; align-items:center; gap:2px; font-size:11px; cursor:pointer;";
+  priorityLabel.className = "check-control";
   priorityLabel.title = "Đánh dấu ưu tiên";
   const priorityCheckbox = document.createElement("input");
   priorityCheckbox.type = "checkbox";
   priorityCheckbox.className = "priority-checkbox";
   priorityCheckbox.dataset.id = issue.id;
   priorityCheckbox.checked = Boolean(issue.priority);
-  priorityLabel.append(priorityCheckbox, " ⭐ Ưu tiên");
-  controls.appendChild(priorityLabel);
+  priorityLabel.append(priorityCheckbox, " Ưu tiên");
   if (issue.jiraLink) {
-    const resync = createSmallButton("🔄", "resync-issue", issue.id);
+    const resync = createSmallButton("Sync", "resync-issue", issue.id);
     resync.title = "Đồng bộ lại tiêu đề/status từ Jira";
     controls.appendChild(resync);
   }
@@ -632,50 +665,53 @@ function buildIssueCard(issue) {
   const meta = document.createElement("div");
   meta.className = "meta";
   if (issue.sourceLink) {
-    meta.append(createExternalLink("Nguồn ↗", issue.sourceLink), " ", createSmallButton("✏️", "edit-source", issue.id));
+    meta.append(createExternalLink("Nguồn", issue.sourceLink), createSmallButton("Sửa", "edit-source", issue.id));
   } else {
-    meta.appendChild(createSmallButton("+ Thêm link Crisp", "edit-source", issue.id));
+    meta.appendChild(createSmallButton("Thêm link Crisp", "edit-source", issue.id));
   }
   meta.append(" · ");
   if (issue.jiraLink) {
-    meta.append(createExternalLink("Jira ↗", issue.jiraLink), " ", createSmallButton("✏️", "edit-jira", issue.id));
+    meta.append(createExternalLink("Jira", issue.jiraLink), createSmallButton("Sửa", "edit-jira", issue.id));
   } else {
-    meta.appendChild(createSmallButton("+ Link Jira", "edit-jira", issue.id));
+    meta.appendChild(createSmallButton("Thêm link Jira", "edit-jira", issue.id));
   }
-  meta.append(" · ", createSmallButton("✏️ Sửa tiêu đề", "edit-title", issue.id));
+  meta.append(" · ", createSmallButton("Sửa tiêu đề", "edit-title", issue.id));
   card.appendChild(meta);
 
   if (ageDays !== null && Number.isFinite(ageDays)) {
     const age = document.createElement("div");
     age.className = "issue-age";
-    age.style.cssText = "color:var(--muted); font-size:11px; margin-top:2px;";
-    age.textContent = `🕐 Đã mở ${Math.max(0, ageDays)} ngày`;
+    age.textContent = `Đã mở ${Math.max(0, ageDays)} ngày`;
     card.appendChild(age);
   }
   if (issue.jiraSyncError) {
     const error = document.createElement("div");
-    error.style.cssText = "font-size:11px; color:var(--danger); margin-top:4px; word-break:break-word;";
-    error.textContent = `⚠️ Lỗi đồng bộ Jira: ${cleanText(issue.jiraSyncError, 500)}`;
+    error.className = "issue-error";
+    error.textContent = `Lỗi đồng bộ Jira: ${cleanText(issue.jiraSyncError, 500)}`;
     card.appendChild(error);
   }
   if (issue.status === "done" && !issue.reportedToCustomer) {
     const reminder = document.createElement("div");
     reminder.className = "reminder-banner";
-    reminder.textContent = `✅ Jira đã ${statusLabel || "Done"} — đã báo khách chưa?`;
+    reminder.textContent = `Jira đã ${statusLabel || "Done"}. Đã báo khách chưa?`;
     card.appendChild(reminder);
   }
 
   const footer = document.createElement("div");
-  footer.style.cssText = "margin-top:6px; display:flex; justify-content:space-between; align-items:center;";
+  footer.className = "issue-footer";
   const reportedLabel = document.createElement("label");
-  reportedLabel.style.cssText = "display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;";
+  reportedLabel.className = "check-control";
   const reportedCheckbox = document.createElement("input");
   reportedCheckbox.type = "checkbox";
   reportedCheckbox.className = "mark-reported-checkbox";
   reportedCheckbox.dataset.id = issue.id;
   reportedCheckbox.checked = Boolean(issue.reportedToCustomer);
   reportedLabel.append(reportedCheckbox, " Đã báo khách");
-  footer.append(reportedLabel, createSmallButton("Xoá", "remove-issue", issue.id));
+  const flags = document.createElement("span");
+  flags.className = "issue-flags";
+  flags.append(priorityLabel, reportedLabel);
+  const removeButton = createSmallButton("Xóa", "remove-issue danger-action", issue.id);
+  footer.append(flags, removeButton);
   card.appendChild(footer);
   return card;
 }
@@ -687,11 +723,15 @@ async function renderIssuesList() {
   const issues = await getIssues();
   const list = document.getElementById("issuesList");
   clearElement(list);
+  const activeCount = issues.filter((issue) => !issue.reportedToCustomer).length;
+  const count = document.getElementById("issuesCount");
+  count.textContent = String(activeCount);
+  count.setAttribute("aria-label", `${activeCount} issue đang xử lý`);
 
   if (issues.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "Chưa có issue nào được theo dõi.";
+    empty.textContent = "Chưa có issue nào. Thêm tab hiện tại hoặc tìm issue Jira để bắt đầu theo dõi.";
     list.appendChild(empty);
     return;
   }
@@ -708,26 +748,25 @@ async function renderIssuesList() {
 
   if (priorityIssues.length > 0) {
     const heading = document.createElement("div");
-    heading.textContent = "⭐ Ưu tiên";
-    heading.style.cssText = "font-size:12px; font-weight:700; color:#f59e0b; margin-bottom:6px;";
+    heading.className = "issue-section-heading";
+    heading.textContent = `Ưu tiên (${priorityIssues.length})`;
     list.appendChild(heading);
     priorityIssues.forEach((issue) => list.appendChild(buildIssueCard(issue)));
   }
 
   if (otherIssues.length > 0) {
     const heading = document.createElement("div");
-    heading.textContent = "Khác";
-    heading.style.cssText = `font-size:12px; font-weight:700; color:var(--muted); margin-bottom:6px;${priorityIssues.length > 0 ? " margin-top:12px;" : ""}`;
+    heading.className = "issue-section-heading";
+    heading.textContent = `Đang xử lý (${otherIssues.length})`;
     list.appendChild(heading);
     otherIssues.forEach((issue) => list.appendChild(buildIssueCard(issue)));
   }
 
   if (reportedIssues.length > 0) {
     const details = document.createElement("details");
-    details.style.cssText = activeIssues.length > 0 ? "margin-top:16px;" : "";
+    details.className = "reported-section";
     const summary = document.createElement("summary");
-    summary.textContent = `✅ Đã báo khách (${reportedIssues.length})`;
-    summary.style.cssText = "font-size:12px; font-weight:700; color:var(--ok); margin-bottom:6px; cursor:pointer;";
+    summary.textContent = `Đã báo khách (${reportedIssues.length})`;
     details.appendChild(summary);
     reportedIssues.forEach((issue) => details.appendChild(buildIssueCard(issue)));
     list.appendChild(details);
@@ -824,7 +863,7 @@ async function renderIssuesList() {
       try {
         target.sourceLink = newLink.trim() ? normalizeCrispUrl(newLink) : "";
       } catch (error) {
-        alert(safeErrorMessage(error));
+        showNotice("issues", safeErrorMessage(error));
         return;
       }
       await saveIssues(issues);
@@ -847,7 +886,7 @@ async function renderIssuesList() {
       try {
         trimmed = newLink.trim() ? await normalizeConfiguredJiraLink(newLink) : "";
       } catch (error) {
-        alert(safeErrorMessage(error));
+        showNotice("issues", safeErrorMessage(error));
         return;
       }
       const oldLink = target.jiraLink;
@@ -879,7 +918,7 @@ async function syncJiraStatuses() {
       } else if (res?.data?.status == null) {
         // Gọi API thành công nhưng không trích được status (VD: sai định dạng
         // link Jira nên không tách được issue key, hoặc issue không tồn tại)
-        issue.jiraSyncError = "Không lấy được status — kiểm tra lại link Jira có đúng dạng .../browse/PROJ-123 không.";
+        issue.jiraSyncError = "Không lấy được status. Kiểm tra lại link Jira có đúng dạng .../browse/PROJ-123 không.";
       }
       // Chỉ ghi đè khi có giá trị mới — không xoá mốc thời gian cũ nếu lần sync này lỗi.
       if (res?.data?.created) issue.jiraCreatedAt = res.data.created;

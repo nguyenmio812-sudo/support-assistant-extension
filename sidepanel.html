@@ -1,186 +1,172 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-<meta charset="UTF-8" />
-<title>Support Assistant</title>
-<style>
-  :root {
-    --bg: #ffffff;
-    --border: #e5e5e5;
-    --accent: #5b21b6;
-    --muted: #6b7280;
-    --danger: #dc2626;
-    --warn: #d97706;
-    --ok: #16a34a;
-  }
-  * { box-sizing: border-box; }
-  body {
-    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-    margin: 0;
-    background: var(--bg);
-    color: #111827;
-    width: 380px;
-  }
-  header {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  header h1 { font-size: 15px; margin: 0; }
-  .tabs { display: flex; border-bottom: 1px solid var(--border); }
-  .tab-btn {
-    flex: 1; padding: 10px; text-align: center; cursor: pointer;
-    font-size: 13px; color: var(--muted); border-bottom: 2px solid transparent;
-  }
-  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
-  .panel { display: none; padding: 14px 16px; }
-  .panel.active { display: block; }
-
-  .row { display: flex; gap: 8px; margin-bottom: 10px; }
-  select, input[type=text] {
-    width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;
-  }
-  button.primary {
-    background: var(--accent); color: white; border: none; border-radius: 6px;
-    padding: 9px 12px; font-size: 13px; cursor: pointer; width: 100%;
-  }
-  button.primary:disabled { opacity: 0.5; cursor: default; }
-  button.secondary {
-    background: white; color: var(--accent); border: 1px solid var(--accent);
-    border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer;
-  }
-  .summary-box {
-    margin-top: 12px; padding: 10px; background: #f9fafb; border-radius: 8px;
-    font-size: 13px; line-height: 1.5; white-space: pre-wrap;
-  }
-  .chip {
-    display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
-    margin: 2px 4px 2px 0; background: #ede9fe; color: var(--accent);
-  }
-  .priority-P1 { color: var(--danger); font-weight: 700; }
-  .priority-P2 { color: var(--warn); font-weight: 700; }
-  .priority-P3, .priority-P4 { color: var(--ok); font-weight: 700; }
-
-  .suggested-actions { margin-top: 10px; }
-  .suggested-actions button {
-    display: flex; justify-content: space-between; align-items: center;
-    width: 100%; text-align: left; background: white; border: 1px solid var(--border);
-    border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; font-size: 13px; cursor: pointer;
-  }
-  .suggested-actions button:hover { border-color: var(--accent); }
-
-  .issue-card {
-    border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 10px; font-size: 12px;
-  }
-  .issue-card .meta { color: var(--muted); margin-top: 4px; }
-  .issue-card-priority {
-    border-left: 4px solid #f59e0b; background: #fffbeb;
-  }
-  .status-badge {
-    display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
-  }
-  .status-todo { background: #f3f4f6; color: #374151; }
-  .status-inprogress { background: #fef3c7; color: #92400e; }
-  .status-done { background: #dcfce7; color: #166534; }
-
-  .reminder-banner {
-    background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px;
-    padding: 8px; font-size: 12px; margin-top: 6px; display: flex;
-    justify-content: space-between; align-items: center;
-  }
-  .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 0; }
-  .loading { color: var(--muted); font-size: 12px; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Support Assistant</title>
+  <link rel="stylesheet" href="styles/tokens.css" />
+  <link rel="stylesheet" href="styles/sidepanel.css" />
 </head>
 <body>
-  <header>
-    <h1>🎧 Support Assistant</h1>
-    <button class="secondary" id="openOptions">Cài đặt</button>
-  </header>
-
-  <div class="tabs">
-    <div class="tab-btn active" data-tab="summary">Tóm tắt</div>
-    <div class="tab-btn" data-tab="issues">Issue Tracking</div>
-  </div>
-
-  <!-- TAB 1: SUMMARY -->
-  <div class="panel active" id="panel-summary">
-    <div class="row">
-      <select id="langSelect">
-        <option value="vi">Tóm tắt: Tiếng Việt</option>
-        <option value="en">Tóm tắt: English</option>
-      </select>
-      <select id="replyLangSelect">
-        <option value="en">Trả lời: English</option>
-        <option value="vi">Trả lời: Tiếng Việt</option>
-      </select>
-    </div>
-    <button class="primary" id="summarizeBtn">Tóm tắt cuộc trò chuyện</button>
-
-    <div id="summaryResult" style="display:none">
-      <div id="debugInfo" style="font-size:11px; color:var(--muted); margin-bottom:6px; word-break:break-all;"></div>
-      <div class="summary-box" id="summaryText"></div>
-      <div style="margin-top:8px">
-        <span id="priorityLabel"></span>
-        <div id="tagsContainer" style="margin-top:6px"></div>
-      </div>
-      <div class="suggested-actions" id="suggestedActions"></div>
-
-      <div id="relatedIssuesSection" style="display:none; margin-top:8px;">
-        <div style="font-size:12px; color:var(--muted); margin-bottom:4px;">🔍 Issue liên quan có sẵn trên Jira</div>
-        <div id="relatedIssuesContainer"></div>
-      </div>
-
-      <div id="replyDraftSection" style="display:none; margin-top:10px; border:1px solid var(--border); border-radius:8px; padding:10px;">
-        <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Gợi ý trả lời khách — xem lại/chỉnh sửa trước khi copy:</label>
-        <textarea id="replyDraftText" rows="6" style="width:100%; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit; resize:vertical;"></textarea>
-        <textarea id="replyHintInput" rows="2" placeholder="Thêm ý agent muốn đưa vào câu trả lời (VD: đã fix trên bản 2.3, hẹn khách 3 ngày)..." style="width:100%; margin-top:6px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-family:inherit; resize:vertical;"></textarea>
-        <div style="margin-top:8px; display:flex; gap:8px;">
-          <button class="primary" id="copyReplyBtn">📋 Copy nội dung</button>
-          <button class="secondary" id="regenerateReplyBtn">🔁 Tạo lại câu trả lời</button>
+  <main class="app-shell">
+    <div class="app-chrome">
+      <header class="app-header">
+        <div class="brand">
+          <img class="brand-mark" src="icons/icon128.png" alt="" />
+          <div class="brand-copy">
+            <h1 class="brand-title">Support Assistant</h1>
+            <p class="brand-subtitle">Crisp và Jira workspace</p>
+          </div>
         </div>
+        <button class="ghost" id="openOptions" type="button">Cài đặt</button>
+      </header>
+
+      <nav class="tabs" role="tablist" aria-label="Khu vực làm việc">
+        <button class="tab-btn active" type="button" role="tab" aria-selected="true" aria-controls="panel-summary" data-tab="summary">
+          Tóm tắt
+        </button>
+        <button class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="panel-issues" data-tab="issues">
+          Issue
+          <span class="tab-count" id="issuesCount" aria-label="Số issue đang xử lý">0</span>
+        </button>
+      </nav>
+    </div>
+
+    <section class="panel active" id="panel-summary" role="tabpanel">
+      <div class="panel-heading">
+        <h2>Nắm nhanh hội thoại</h2>
+        <p>Đọc hội thoại Crisp hiện tại, tóm tắt và chuẩn bị câu trả lời.</p>
       </div>
-    </div>
-  </div>
 
-  <!-- TAB 2: ISSUE TRACKING -->
-  <div class="panel" id="panel-issues">
-    <div class="row">
-      <button class="secondary" id="addCurrentBtn" style="flex:1;">+ Thêm tab hiện tại</button>
-      <button class="secondary" id="toggleManualFormBtn" style="flex:1;">+ Thêm thủ công</button>
-      <button class="secondary" id="syncAllBtn" style="flex:1;">🔄 Đồng bộ tất cả</button>
-      <button class="secondary" id="myUntrackedIssuesBtn" style="flex:1;">👤 Issue tôi đang follow</button>
-    </div>
+      <div class="notice" id="summaryNotice" role="status" aria-live="polite"></div>
 
-    <div id="jiraSearchSection" style="display:none; border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:12px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-        <strong style="font-size:13px;">🔍 Kết quả tìm kiếm Jira (chưa có trong Issue Tracking)</strong>
-        <button class="secondary" id="jiraSearchCloseBtn" style="padding:2px 8px; font-size:11px;">Đóng</button>
+      <div class="surface control-shelf">
+        <label class="field">
+          <span class="field-label">Ngôn ngữ tóm tắt</span>
+          <select id="langSelect">
+            <option value="vi">Tiếng Việt</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Ngôn ngữ trả lời</span>
+          <select id="replyLangSelect">
+            <option value="en">English</option>
+            <option value="vi">Tiếng Việt</option>
+          </select>
+        </label>
       </div>
-      <div id="jiraSearchContainer" style="font-size:12px;"></div>
-    </div>
 
-    <div id="manualForm" style="display:none; border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:12px;">
-      <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:2px;">Link Crisp (không bắt buộc)</label>
-      <input type="text" id="manualCrispLink" placeholder="https://app.crisp.chat/website/.../inbox/session_..." style="margin-bottom:8px;" />
-      <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:2px;">Link Jira (không bắt buộc)</label>
-      <input type="text" id="manualJiraLink" placeholder="https://yourteam.atlassian.net/browse/SUP-123" style="margin-bottom:6px;" />
-      <div style="font-size:11px; color:var(--muted); margin-bottom:10px;">Tiêu đề sẽ tự lấy từ Jira (nếu có link Jira) hoặc từ tab Crisp đang mở (nếu có link Crisp).</div>
-      <div class="row" style="margin-bottom:0;">
-        <button class="primary" id="manualSaveBtn" style="flex:1;">Lưu issue</button>
-        <button class="secondary" id="manualCancelBtn" style="flex:1;">Huỷ</button>
+      <button class="primary full-width summary-trigger" id="summarizeBtn" type="button">Tóm tắt cuộc trò chuyện</button>
+
+      <div class="result-shell" id="summaryResult" style="display:none">
+        <div class="source-disclosure" id="debugInfo"></div>
+
+        <section class="surface summary-card" aria-labelledby="summaryHeading">
+          <p class="section-kicker" id="summaryHeading">Tóm tắt</p>
+          <div class="summary-box" id="summaryText"></div>
+          <div class="summary-meta">
+            <span id="priorityLabel"></span>
+            <div id="tagsContainer"></div>
+          </div>
+        </section>
+
+        <div class="suggested-actions" id="suggestedActions"></div>
+
+        <section class="surface subpanel" id="relatedIssuesSection" style="display:none" aria-labelledby="relatedIssuesHeading">
+          <div class="subpanel-header">
+            <div>
+              <h3 class="subpanel-title" id="relatedIssuesHeading">Issue Jira liên quan</h3>
+              <p class="subpanel-description">Kết quả dựa trên tag và nội dung vừa tóm tắt.</p>
+            </div>
+          </div>
+          <div id="relatedIssuesContainer"></div>
+        </section>
+
+        <section class="surface subpanel" id="replyDraftSection" style="display:none" aria-labelledby="replyDraftHeading">
+          <div class="subpanel-header">
+            <div>
+              <h3 class="subpanel-title" id="replyDraftHeading">Bản nháp trả lời</h3>
+              <p class="subpanel-description">Chỉnh sửa nội dung trước khi copy.</p>
+            </div>
+          </div>
+          <div class="ai-review-note">Nội dung do AI đề xuất. Agent cần kiểm tra trước khi gửi khách.</div>
+          <label class="field" for="replyDraftText">
+            <span class="field-label">Nội dung trả lời</span>
+            <textarea id="replyDraftText" rows="7"></textarea>
+          </label>
+          <label class="field" for="replyHintInput">
+            <span class="field-label">Thông tin bổ sung cho lần tạo lại</span>
+            <textarea id="replyHintInput" rows="2" placeholder="Ví dụ: đã sửa ở bản 2.3, hẹn phản hồi trong 3 ngày"></textarea>
+          </label>
+          <div class="editor-actions">
+            <button class="primary" id="copyReplyBtn" type="button">Copy nội dung</button>
+            <button class="secondary" id="regenerateReplyBtn" type="button">Tạo lại</button>
+          </div>
+        </section>
       </div>
-    </div>
+    </section>
 
-    <div class="row">
-      <input type="text" id="keywordSearchInput" placeholder="Tìm issue Jira theo từ khoá..." style="flex:1;" />
-      <button class="secondary" id="keywordSearchBtn">🔍 Tìm</button>
-    </div>
+    <section class="panel" id="panel-issues" role="tabpanel" aria-hidden="true">
+      <div class="panel-heading">
+        <h2>Theo dõi issue</h2>
+        <p>Kết nối conversation Crisp với Jira và theo dõi việc báo lại khách.</p>
+      </div>
 
-    <div id="issuesList"></div>
-  </div>
+      <div class="notice" id="issuesNotice" role="status" aria-live="polite"></div>
+
+      <div class="issue-toolbar">
+        <button class="primary" id="addCurrentBtn" type="button">Thêm tab hiện tại</button>
+        <button class="secondary" id="toggleManualFormBtn" type="button">Thêm thủ công</button>
+      </div>
+      <div class="utility-row">
+        <button class="secondary" id="syncAllBtn" type="button">Đồng bộ Jira</button>
+        <button class="secondary" id="myUntrackedIssuesBtn" type="button">Issue đang follow</button>
+      </div>
+
+      <section class="surface subpanel" id="jiraSearchSection" style="display:none" aria-labelledby="jiraSearchHeading">
+        <div class="subpanel-header">
+          <div>
+            <h3 class="subpanel-title" id="jiraSearchHeading">Kết quả Jira</h3>
+            <p class="subpanel-description">Chỉ hiển thị issue chưa có trong danh sách theo dõi.</p>
+          </div>
+          <button class="ghost compact-action" id="jiraSearchCloseBtn" type="button">Đóng</button>
+        </div>
+        <div id="jiraSearchContainer"></div>
+      </section>
+
+      <section class="surface subpanel" id="manualForm" style="display:none" aria-labelledby="manualFormHeading">
+        <div class="subpanel-header">
+          <div>
+            <h3 class="subpanel-title" id="manualFormHeading">Thêm issue thủ công</h3>
+            <p class="subpanel-description">Nhập ít nhất một trong hai liên kết.</p>
+          </div>
+        </div>
+        <div class="form-grid">
+          <label class="field" for="manualCrispLink">
+            <span class="field-label">Link Crisp</span>
+            <input type="text" id="manualCrispLink" placeholder="https://app.crisp.chat/website/..." />
+          </label>
+          <label class="field" for="manualJiraLink">
+            <span class="field-label">Link Jira</span>
+            <input type="text" id="manualJiraLink" placeholder="https://yourteam.atlassian.net/browse/SUP-123" />
+          </label>
+          <p class="helper-text">Tiêu đề được lấy từ Jira trước, sau đó từ tab Crisp đang mở.</p>
+          <div class="form-actions">
+            <button class="primary" id="manualSaveBtn" type="button">Lưu issue</button>
+            <button class="secondary" id="manualCancelBtn" type="button">Hủy</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="search-row">
+        <input type="text" id="keywordSearchInput" aria-label="Tìm issue Jira" placeholder="Tìm issue Jira theo từ khóa" />
+        <button class="secondary" id="keywordSearchBtn" type="button">Tìm</button>
+      </div>
+
+      <div id="issuesList"></div>
+    </section>
+  </main>
 
   <script src="common.js"></script>
   <script src="sidepanel.js"></script>
