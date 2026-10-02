@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Support Assistant UI Preview</title>
+  <link rel="stylesheet" href="../../styles/tokens.css" />
+  <link rel="stylesheet" href="../../styles/sidepanel.css" />
+  <style>
+    body { display: grid; min-width: 0; place-items: start center; padding: 24px; }
+    .preview-frame { width: 380px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--bg-canvas); box-shadow: var(--shadow-surface); }
+  </style>
+</head>
+<body>
+  <div class="preview-frame">
+    <div class="app-chrome">
+      <header class="app-header">
+        <div class="brand">
+          <img class="brand-mark" src="../../icons/icon128.png" alt="" />
+          <div class="brand-copy">
+            <h1 class="brand-title">Support Assistant</h1>
+            <p class="brand-subtitle">Crisp và Jira workspace</p>
+          </div>
+        </div>
+        <button class="ghost" type="button">Cài đặt</button>
+      </header>
+      <nav class="tabs">
+        <button class="tab-btn" type="button">Tóm tắt</button>
+        <button class="tab-btn active" type="button">Issue <span class="tab-count">3</span></button>
+      </nav>
+    </div>
+
+    <section class="panel active">
+      <div class="panel-heading">
+        <h2>Theo dõi issue</h2>
+        <p>Kết nối conversation Crisp với Jira và theo dõi việc báo lại khách.</p>
+      </div>
+      <div class="issue-toolbar">
+        <button class="primary" type="button">Thêm tab hiện tại</button>
+        <button class="secondary" type="button">Thêm thủ công</button>
+      </div>
+      <div class="utility-row">
+        <button class="secondary" type="button">Đồng bộ Jira</button>
+        <button class="secondary" type="button">Issue đang follow</button>
+      </div>
+      <div class="search-row">
+        <input type="text" placeholder="Tìm issue Jira theo từ khóa" />
+        <button class="secondary" type="button">Tìm</button>
+      </div>
+
+      <div class="issue-section-heading">Ưu tiên (1)</div>
+      <article class="issue-card issue-card-priority">
+        <div class="issue-header">
+          <strong class="issue-title">Checkout không hoàn tất sau khi khách cập nhật địa chỉ</strong>
+          <span class="issue-controls"><span class="status-badge status-inprogress">In Progress</span></span>
+        </div>
+        <div class="meta"><a href="#">Nguồn</a><button class="ghost compact-action">Sửa</button><span>·</span><a href="#">Jira</a><button class="ghost compact-action">Sửa</button></div>
+        <div class="issue-age">Đã mở 3 ngày</div>
+        <div class="issue-footer"><label class="check-control"><input type="checkbox" /> Đã báo khách</label><button class="ghost compact-action danger-action">Xóa</button></div>
+      </article>
+
+      <div class="issue-section-heading">Đang xử lý (2)</div>
+      <article class="issue-card">
+        <div class="issue-header">
+          <strong class="issue-title">Đồng bộ sản phẩm Shopify bị trễ</strong>
+          <span class="issue-controls"><span class="status-badge status-done">Passed</span></span>
+        </div>
+        <div class="meta"><a href="#">Nguồn</a><button class="ghost compact-action">Sửa</button><span>·</span><a href="#">Jira</a><button class="ghost compact-action">Sửa</button></div>
+        <div class="reminder-banner">Jira đã Passed. Đã báo khách chưa?</div>
+        <div class="issue-footer"><label class="check-control"><input type="checkbox" /> Đã báo khách</label><button class="ghost compact-action danger-action">Xóa</button></div>
+      </article>
+
+      <article class="issue-card">
+        <div class="issue-header">
+          <strong class="issue-title">Không tải được ảnh xem trước</strong>
+          <span class="issue-controls"><span class="status-badge status-todo">To Do</span></span>
+        </div>
+        <div class="meta"><a href="#">Nguồn</a><button class="ghost compact-action">Sửa</button><span>·</span><a href="#">Jira</a><button class="ghost compact-action">Sửa</button></div>
+        <div class="issue-error">Lỗi đồng bộ Jira: credential không hợp lệ hoặc đã hết hạn.</div>
+        <div class="issue-footer"><label class="check-control"><input type="checkbox" /> Đã báo khách</label><button class="ghost compact-action danger-action">Xóa</button></div>
+      </article>
+    </section>
+  </div>
+</body>
+</html>

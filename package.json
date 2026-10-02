@@ -1,6 +1,6 @@
 {
   "name": "support-assistant-extension",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "private": true,
   "scripts": {
     "check": "node --check background.js && node --check common.js && node --check content.js && node --check options.js && node --check sidepanel.js && node -e \"JSON.parse(require('fs').readFileSync('manifest.json','utf8'))\"",

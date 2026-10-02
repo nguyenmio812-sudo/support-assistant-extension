@@ -1,5 +1,13 @@
 # Support Assistant Extension — MVP scaffold
 
+## Giao diện 0.15.0
+
+- Side panel responsive, không còn cố định chiều rộng 380px.
+- Hai khu vực Tóm tắt và Issue Tracking có phân cấp thao tác rõ ràng hơn.
+- Issue card tách title, Jira status, liên kết, priority, trạng thái báo khách và lỗi đồng bộ.
+- Settings tách riêng Security, OpenAI và Jira, có nút hiện/ẩn credential cục bộ.
+- Toàn bộ storage keys, issue fields và API/message contracts được giữ nguyên; không cần migrate dữ liệu.
+
 ## Cài vào Chrome/Edge để chạy thử
 1. Mở `chrome://extensions` (hoặc `edge://extensions`)
 2. Bật "Developer mode"
@@ -19,7 +27,7 @@
   1. Inject `content.js` vào đúng tab đang active tại thời điểm bấm (`chrome.scripting.executeScript`).
   2. Gọi hàm trích xuất text từ trang đó.
   3. Che email/số điện thoại/token theo best-effort rồi gửi text sang `background.js` → gọi OpenAI Responses API để tóm tắt/chấm priority/gắn tag.
-- Extension chỉ cho phép đọc tab HTTPS thuộc `crisp.chat` sau khi agent bấm nút. Jira tenant được xin quyền tùy chọn lúc lưu cấu hình; OpenAI API là host permission cố định duy nhất.
+- Extension chỉ xin quyền truy cập HTTPS thuộc `crisp.chat` ở lần đầu agent chủ động bấm nút **Tóm tắt**. Jira tenant được xin quyền tùy chọn lúc lưu cấu hình; OpenAI API là host permission cố định duy nhất.
   - *Lý do không dùng riêng `activeTab`*: quyền `activeTab` chỉ cấp cho đúng tab đang active **tại thời điểm bạn mở side panel** (click icon extension) — nếu sau đó bạn chuyển tab rồi mới bấm Tóm tắt, tab mới sẽ KHÔNG có quyền và bị lỗi `Cannot access contents of the page`. Vì side panel của bạn cần hoạt động trên tab bất kỳ đang xem, phải xin host permission rộng thay vì phụ thuộc gesture của `activeTab`.
 
 ### Trích xuất nội dung (content.js) — tránh đọc lẫn nhiều hội thoại
