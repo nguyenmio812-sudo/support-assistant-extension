@@ -7,6 +7,7 @@ const sidepanelJs = fs.readFileSync("sidepanel.js", "utf8");
 const optionsHtml = fs.readFileSync("options.html", "utf8");
 const optionsJs = fs.readFileSync("options.js", "utf8");
 const backgroundJs = fs.readFileSync("background.js", "utf8");
+const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
 
 function idsUsedBy(source) {
   return [...source.matchAll(/getElementById\(["']([^"']+)["']\)/g)].map((match) => match[1]);
@@ -63,4 +64,11 @@ test("UI keeps inline styles limited to initial visibility state", () => {
     assert.equal(inlineStyles.every((style) => style === "display:none"), true);
   }
   assert.doesNotMatch(sidepanelJs, /style\.cssText/);
+});
+
+test("Crisp access is requested as an optional host permission", () => {
+  assert.equal(manifest.host_permissions.includes("https://*.crisp.chat/*"), false);
+  assert.equal(manifest.optional_host_permissions.includes("https://*.crisp.chat/*"), true);
+  assert.match(sidepanelJs, /chrome\.permissions\.request/);
+  assert.doesNotMatch(sidepanelJs, /chrome\.permissions\.contains/);
 });

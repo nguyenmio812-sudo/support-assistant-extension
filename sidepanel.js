@@ -8,6 +8,15 @@ const {
   safeErrorMessage,
 } = SupportAssistantCommon;
 
+const CRISP_HOST_PERMISSION = "https://*.crisp.chat/*";
+
+async function ensureCrispHostPermission() {
+  const permission = { origins: [CRISP_HOST_PERMISSION] };
+  // Gọi request trực tiếp trong click handler để Chrome vẫn ghi nhận user gesture.
+  // Nếu quyền đã được cấp trước đó, API trả về true mà không hiện lại prompt.
+  return chrome.permissions.request(permission);
+}
+
 function clearElement(element) {
   while (element.firstChild) element.removeChild(element.firstChild);
 }
@@ -98,6 +107,16 @@ document.getElementById("summarizeBtn").addEventListener("click", async () => {
   showNotice("summary");
 
   try {
+    btn.textContent = "Đang kiểm tra quyền truy cập Crisp...";
+    const crispAccessGranted = await ensureCrispHostPermission();
+    if (!crispAccessGranted) {
+      showNotice(
+        "summary",
+        "Cần cấp quyền truy cập crisp.chat để đọc hội thoại. Extension chỉ đọc nội dung khi bạn chủ động bấm Tóm tắt."
+      );
+      return;
+    }
+
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (!tab || !tab.id) {

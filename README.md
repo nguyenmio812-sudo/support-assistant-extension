@@ -27,7 +27,7 @@
   1. Inject `content.js` vào đúng tab đang active tại thời điểm bấm (`chrome.scripting.executeScript`).
   2. Gọi hàm trích xuất text từ trang đó.
   3. Che email/số điện thoại/token theo best-effort rồi gửi text sang `background.js` → gọi OpenAI Responses API để tóm tắt/chấm priority/gắn tag.
-- Extension chỉ cho phép đọc tab HTTPS thuộc `crisp.chat` sau khi agent bấm nút. Jira tenant được xin quyền tùy chọn lúc lưu cấu hình; OpenAI API là host permission cố định duy nhất.
+- Extension chỉ xin quyền truy cập HTTPS thuộc `crisp.chat` ở lần đầu agent chủ động bấm nút **Tóm tắt**. Jira tenant được xin quyền tùy chọn lúc lưu cấu hình; OpenAI API là host permission cố định duy nhất.
   - *Lý do không dùng riêng `activeTab`*: quyền `activeTab` chỉ cấp cho đúng tab đang active **tại thời điểm bạn mở side panel** (click icon extension) — nếu sau đó bạn chuyển tab rồi mới bấm Tóm tắt, tab mới sẽ KHÔNG có quyền và bị lỗi `Cannot access contents of the page`. Vì side panel của bạn cần hoạt động trên tab bất kỳ đang xem, phải xin host permission rộng thay vì phụ thuộc gesture của `activeTab`.
 
 ### Trích xuất nội dung (content.js) — tránh đọc lẫn nhiều hội thoại
